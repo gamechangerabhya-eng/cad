@@ -615,7 +615,22 @@ marker = android_dir / ".artcraft-android-builder-generated"
 # Bump this whenever the generated launcher template changes so stale wrappers (which live in the
 # source checkout and would otherwise be preserved forever) are regenerated automatically instead
 # of failing against a newer app API.
-GENERATOR_VERSION = "62"
+GENERATOR_VERSION = "63"
+
+def ime_bridge_for_app(path):
+    text = path.read_text(encoding="utf-8")
+    start_marker = "        // ARTCRAFT_WORDCRAFT_HIDE_IME_START\n"
+    end_marker = "        // ARTCRAFT_WORDCRAFT_HIDE_IME_END\n"
+    if app == "wordcraft":
+        if start_marker not in text or end_marker not in text:
+            raise SystemExit("The shared IME bridge is missing its WordCraft-only method markers.")
+        return text.replace(start_marker, "").replace(end_marker, "")
+
+    before, start, remainder = text.partition(start_marker)
+    _method, end, after = remainder.partition(end_marker)
+    if not start or not end:
+        raise SystemExit("The shared IME bridge is missing its WordCraft-only method markers.")
+    return before + after
 
 # A complete adapter supplied by the user wins over auto-detection. This folder is maintained
 # inside the builder, while its contents are copied into this source checkout.
@@ -631,7 +646,10 @@ if (custom / "Cargo.toml").is_file() and (custom / "src" / "lib.rs").is_file():
     # each adapter so the one copy stays in step with the generator.
     shutil.copy2(root / "templates" / "android" / "system_fonts.rs", android_dir / "src" / "system_fonts.rs")
     # The shared Android soft-keyboard bridge, referenced by `mod ime_bridge;` in the adapter.
-    shutil.copy2(root / "templates" / "android" / "ime_bridge.rs", android_dir / "src" / "ime_bridge.rs")
+    (android_dir / "src" / "ime_bridge.rs").write_text(
+        ime_bridge_for_app(root / "templates" / "android" / "ime_bridge.rs"),
+        encoding="utf-8",
+    )
     # The adapter's launcher gets the same icons as the generated ones: density mipmaps plus the
     # API 26+ adaptive layers (see lib/app_icons.py). An adapter that ships its own `assets/app-icon`
     # seeds the app tree with it when the app has no icon of its own (SubCraft ships only a Windows
@@ -668,7 +686,10 @@ if android_dir.exists():
                 src_shared = root / "templates" / "android" / shared
                 dst_shared = android_dir / "src" / shared
                 if src_shared.is_file() and dst_shared.parent.is_dir():
-                    shutil.copy2(src_shared, dst_shared)
+                    if shared == "ime_bridge.rs":
+                        dst_shared.write_text(ime_bridge_for_app(src_shared), encoding="utf-8")
+                    else:
+                        shutil.copy2(src_shared, dst_shared)
             raise SystemExit(0)
         print("Regenerating the Android launcher for this builder version.")
         shutil.rmtree(android_dir)
@@ -814,6 +835,7 @@ fn saf_save_path(bridge: &saf::Bridge, state: &SafState, name: &str) -> Option<S
 
 /// Folder dialog: a real directory path on the device's main storage (SAF folders elsewhere cannot
 /// be mapped to one), or `None` when cancelled.
+#[cfg(feature = "saf-folder-picker")]
 fn saf_folder_path(bridge: &saf::Bridge, state: &SafState) -> Option<String> {
     let id = saf_next_id(state);
     match bridge.pick_folder_blocking(id, saf::PICK_TIMEOUT) {
@@ -2053,6 +2075,28 @@ INTENT_OPEN = {
 ''',
 }
 saf = SAF_RECIPES.get(app)
+SAF_OPTIONAL_FEATURES = {
+    "saf-request-folder": r"\.request_folder\s*\(",
+    "saf-folder-picker": r"\bsaf_folder_path\s*\(|\.pick_folder_blocking\s*\(",
+    "saf-print-document": r"\.print_document\s*\(",
+    "saf-multi-open-picker": r"\.pick_open_blocking\s*\(",
+    "saf-worker-picker": r"\.pick_blocking_worker\s*\(",
+    "saf-picker-name": r"\bsaf::picker_name\s*\(",
+}
+saf_feature_source = ""
+if saf:
+    # Exclude the shared synchronous helpers so each launcher enables only the optional picker
+    # capabilities actually referenced by its own recipe.
+    saf_feature_source = "\n".join(
+        saf.get(key, "")
+        for key in ("state", "services", "poll", "setup")
+        if isinstance(saf.get(key, ""), str)
+    ).replace(SYNC_SAF_STATE, "")
+    saf_feature_source += "\n" + INTENT_OPEN.get(app, "")
+enabled_saf_features = [
+    name for name, pattern in SAF_OPTIONAL_FEATURES.items()
+    if re.search(pattern, saf_feature_source)
+]
 
 stem = app[:-len("craft")] if app.endswith("craft") else app
 expected = stem[:1].upper() + stem[1:] + "App"
@@ -2729,6 +2773,19 @@ intent_filter = {intent_filter_value}
     except (KeyError, TypeError):
         app_version = "0.0.0"
     apk_basename = f"{app}-{app_version}"
+    saf_features_block = ""
+    if saf:
+        default_features = ", ".join(f'"{name}"' for name in enabled_saf_features)
+        feature_dependencies = {"saf-folder-picker": ["saf-request-folder"]}
+        feature_definitions = "\n".join(
+            f"{name} = {feature_dependencies.get(name, [])}"
+            for name in SAF_OPTIONAL_FEATURES
+        )
+        saf_features_block = (
+            "[features]\n"
+            f"default = [{default_features}]\n"
+            f"{feature_definitions}\n"
+        )
     manifest = f'''[package]
 name = "{app}-android"
 version.workspace = true
@@ -2738,6 +2795,7 @@ license.workspace = true
 [lib]
 crate-type = ["cdylib"]
 
+{saf_features_block}
 [dependencies]
 {engine_pkg} = {{ path = "../../crates/engine" }}
 {ui_pkg} = {{ path = "../../crates/ui-egui" }}
@@ -3174,55 +3232,6 @@ fn android_clipboard_get(app: &AndroidApp) -> String {
     })
 }
 
-/// Write text to the Android system clipboard (`ClipboardManager`). Best-effort:
-/// a refusal is logged, never raised into the frame loop.
-fn android_clipboard_set(app: &AndroidApp, text: &str) {
-    let app = app.clone();
-    let text = text.to_owned();
-    // SAFETY: AndroidApp owns the live VM pointer for the lifetime of the activity.
-    let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr() as *mut _) };
-    let activity_raw = app.activity_as_ptr() as jni::sys::jobject;
-    let result = vm.attach_current_thread(|env| -> jni::errors::Result<()> {
-        // SAFETY: AndroidApp retains this global Activity reference; as_cast_raw borrows it
-        // without taking ownership or attempting to delete the reference.
-        let activity = unsafe { env.as_cast_raw::<JObject>(&activity_raw)? };
-        let service = JObject::from(env.new_string("clipboard")?);
-        let manager = env
-            .call_method(
-                &*activity,
-                jni_str!("getSystemService"),
-                jni_sig!("(Ljava/lang/String;)Ljava/lang/Object;"),
-                &[JValue::Object(&service)],
-            )?
-            .l()?;
-        if manager.is_null() {
-            return Ok(());
-        }
-        let text_obj = JObject::from(env.new_string(&text)?);
-        let label = JObject::from(env.new_string("egui")?);
-        let clip = env
-            .call_static_method(
-                jni_str!("android/content/ClipData"),
-                jni_str!("newPlainText"),
-                jni_sig!("(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Landroid/content/ClipData;"),
-                &[JValue::Object(&label), JValue::Object(&text_obj)],
-            )?
-            .l()?;
-        if clip.is_null() {
-            return Ok(());
-        }
-        env.call_method(
-            &manager,
-            jni_str!("setPrimaryClip"),
-            jni_sig!("(Landroid/content/ClipData;)V"),
-            &[JValue::Object(&clip)],
-        )?;
-        Ok(())
-    });
-    if let Err(error) = result {
-        log::error!("Could not write the Android clipboard: {error}");
-    }
-}
 '''.replace("MARKER_PLACEHOLDER", shell_marker)
 
     # CADCraft's file-format hooks. The engine stays I/O-agnostic on purpose: the *host* installs
@@ -3752,7 +3761,10 @@ fn android_main(android_app: android_activity::AndroidApp) {{
     # The shared Android system-font module, referenced by `mod system_fonts;` in the entry above.
     shutil.copy2(root / "templates" / "android" / "system_fonts.rs", staging_dir / "src" / "system_fonts.rs")
     # The shared Android soft-keyboard bridge, referenced by `mod ime_bridge;` in the entry above.
-    shutil.copy2(root / "templates" / "android" / "ime_bridge.rs", staging_dir / "src" / "ime_bridge.rs")
+    (staging_dir / "src" / "ime_bridge.rs").write_text(
+        ime_bridge_for_app(root / "templates" / "android" / "ime_bridge.rs"),
+        encoding="utf-8",
+    )
 
     # Audio output on Android: the apps get their audio backend from the platform layer (cpal), and
     # their desktop modules are plain cpal code compiled straight from the app's own source into the

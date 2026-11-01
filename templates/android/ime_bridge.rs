@@ -63,6 +63,7 @@ pub mod ime {
             }
         }
 
+        // ARTCRAFT_WORDCRAFT_HIDE_IME_START
         /// Hide the soft keyboard by calling the Activity's `imeHide`. Used when focus is
         /// surrendered during scroll/draw so the keyboard doesn't persist.
         pub fn hide_ime(&self) -> Result<(), String> {
@@ -85,6 +86,7 @@ pub mod ime {
                 })
                 .map_err(|error| error.to_string())
         }
+        // ARTCRAFT_WORDCRAFT_HIDE_IME_END
 
         fn next_event(&self) -> Result<Option<String>, String> {
             self.vm

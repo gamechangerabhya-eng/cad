@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- Generated launchers now compile only the optional SAF picker, print, and worker APIs their app
+  recipe uses, and omit the unused clipboard setter and non-WordCraft IME hide method. Bumped
+  `GENERATOR_VERSION` to 63 to regenerate existing launchers.
+
 ## v37 — 2026-10-20
 
 ### Fixed

@@ -137,7 +137,7 @@ Simple wrappers that call `lib/build-common.sh` with `MODE` ("release"/"debug") 
 Main orchestrator (~4110 lines). Key responsibilities:
 - Argument parsing: `-<app>`, `-stable|-main|-latest`, `-tag=`, `-branch=`, `-appname=`, `-packagename=`, `-appicon=`, `-h`
 - Resolve app metadata: `TITLE`, `REPO` (defaults to `https://github.com/storytold/<app>.git`), special case SubCraft from `https://github.com/Aalzard/subcraft` (origin check uses `APP_ORIGIN`)
-- Constants: `BUILDER_VERSION="0.2.0"`, `UPDATE_API_URL`, `UPDATE_PAGE_URL`, `GENERATOR_VERSION="55"`
+- Constants: `BUILDER_VERSION="0.2.0"`, `UPDATE_API_URL`, `UPDATE_PAGE_URL`, `GENERATOR_VERSION="63"`
 - Locking: single build lock via `flock` on `.artcraft-build.lock` (records PID)
 - Tool checks: git, cargo, python3 with tomllib
 - SDK/JDK/NDK discovery and bootstrap
@@ -215,7 +215,7 @@ All patches are guarded/idempotent.
 
 ### Generator behavior (summary)
 - Creates Android crate dir `apps/$APP-android/`
-- Uses `GENERATOR_VERSION="55"`. Marker file `.artcraft-android-builder-generated` contains version; if present and matches, may skip full regen in some cases, but generator runs each build and writes files.
+- Uses `GENERATOR_VERSION="63"`. Marker file `.artcraft-android-builder-generated` contains version; if present and matches, may skip full regen in some cases, but generator runs each build and writes files.
 - Inspects upstream workspace: reads `Cargo.toml` to find crates, detects UI crate type (eframe/App, Services/Hooks patterns), determines app type/constructors
 - Copies shared modules: `templates/android/system_fonts.rs`, `templates/android/ime_bridge.rs`, and conditionally `templates/android/saf_bridge.rs` (if SAF needed)
 - Generates `src/lib.rs` with `android_main` wiring eframe/GameActivity, immersive fullscreen, modifier key handling, clipboard shortcuts (Ctrl/Cmd+C/X/V), IME bridge, system fonts, bar appearance, back button mapping to Escape, close-guard integration, input probe, persistence/UI scale/staged pruning logic as applicable

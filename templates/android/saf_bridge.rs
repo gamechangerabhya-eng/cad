@@ -160,6 +160,7 @@ mod saf {
                 .map_err(|e| e.to_string())
         }
 
+        #[cfg(feature = "saf-request-folder")]
         pub fn request_folder(&self, id: u64) -> Result<(), String> {
             self.vm
                 .attach_current_thread(|env| -> jni::errors::Result<()> {
@@ -176,6 +177,7 @@ mod saf {
         /// synchronously — `"OK"` once the print dialog has been queued on the main thread, or
         /// `"ERROR: …"` when no print service exists — so the caller gets its receipt (or failure)
         /// inside the same frame while the dialog itself opens asynchronously.
+        #[cfg(feature = "saf-print-document")]
         pub fn print_document(&self, title: &str, pdf: &[u8]) -> Result<String, String> {
             self.vm
                 .attach_current_thread(|env| -> jni::errors::Result<String> {
@@ -359,6 +361,7 @@ mod saf {
         /// Blocking open picker that lets the user select several files at once (apps that import a
         /// list of media ask for that). Like [`Self::pick_blocking`], but the picker allows
         /// multi-select.
+        #[cfg(feature = "saf-multi-open-picker")]
         pub fn pick_open_blocking(&self, id: u64, multiple: bool, timeout: Duration) -> Result<PickAnswer, String> {
             let _nonblocking = NonblockingCallbacks::enable();
             self.request_open(id, multiple)?;
@@ -367,6 +370,7 @@ mod saf {
 
         /// Blocking folder picker: the answer is a real directory path on the device's main
         /// storage (only such folders can be mapped back to a path), or a cancellation.
+        #[cfg(feature = "saf-folder-picker")]
         pub fn pick_folder_blocking(&self, id: u64, timeout: Duration) -> Result<PickAnswer, String> {
             let _nonblocking = NonblockingCallbacks::enable();
             self.request_folder(id)?;
@@ -380,6 +384,7 @@ mod saf {
         /// (which panics with `ERROR_NATIVE_WINDOW_IN_USE_KHR` on resume). Because the frame thread
         /// is alive, the glue's lifecycle callbacks complete on their own — `NonblockingCallbacks`
         /// must NOT be enabled here, and input is left to the frame thread's own iterator.
+        #[cfg(feature = "saf-worker-picker")]
         pub fn pick_blocking_worker(&self, id: u64, save_name: Option<&str>, timeout: Duration) -> Result<PickAnswer, String> {
             match save_name {
                 Some(name) => self.request_save(id, name)?,
@@ -388,6 +393,7 @@ mod saf {
             self.wait_answer_worker(id, timeout)
         }
 
+        #[cfg(feature = "saf-worker-picker")]
         fn wait_answer_worker(&self, id: u64, timeout: Duration) -> Result<PickAnswer, String> {
             let deadline = Instant::now() + timeout;
             loop {
@@ -475,6 +481,7 @@ mod saf {
     }
 
     /// The file name (without directory) of a staged path, for the app's display.
+    #[cfg(feature = "saf-picker-name")]
     pub fn picker_name(path: &str) -> String {
         std::path::Path::new(path)
             .file_name()
