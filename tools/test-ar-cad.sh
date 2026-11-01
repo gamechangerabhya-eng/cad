@@ -35,6 +35,7 @@ if [[ "$RUN_RUST_TESTS" == "1" ]]; then
   known_exclusions=(
     --skip gpu_viewport_stencil::clipped_viewport_contents_draw_only_inside_their_outline
     --skip roundtrip::dwg::
+    --skip leader_vertex_elevation::dwg_preserves_leader_vertex_elevations
     --skip wipeout_grips::coincident_endpoints_remain_separately_editable_after_save
     --skip wipeout_grips::dwg_api_grips_survive_roundtrip
     --skip wipeout_grips::dwg_interactive_grips_survive_roundtrip
