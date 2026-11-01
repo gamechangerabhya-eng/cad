@@ -208,60 +208,6 @@ def main() -> None:
         if remove_exact(cargo_lock, lock_entry, f'name = "{crate}"'):
             changed.append("Cargo.lock ([[patch.unused]])")
 
-    nearest_on_polyline = (
-        "/// The nearest point to `p` on a polyline (through tessellated points).\n"
-        "pub(crate) fn nearest_on_polyline(pts: &[Vec2], p: Vec2) -> Option<Vec2> {\n"
-        "    let mut best: Option<(f64, Vec2)> = None;\n"
-        "    for w in pts.windows(2) {\n"
-        "        if let [a, b] = w {\n"
-        "            let c = Line::new(*a, *b).closest(p);\n"
-        "            let d = c.dist(p);\n"
-        "            if best.is_none_or(|(bd, _)| d < bd) {\n"
-        "                best = Some((d, c));\n"
-        "            }\n"
-        "        }\n"
-        "    }\n"
-        "    best.map(|(_, c)| c).or_else(|| pts.first().copied())\n"
-        "}\n\n"
-    )
-    if remove_exact(
-        src / "crates/geom/src/curve.rs",
-        nearest_on_polyline,
-        "pub(crate) fn nearest_on_polyline(",
-    ):
-        changed.append("crates/geom/src/curve.rs (unreferenced helper)")
-
-    obsolete_offset_wrappers = [
-        (
-            "crates/engine/src/cmd/modify/offset.rs",
-            "/// Offset an entity by `dist` towards `side`. Returns the new geometry.\n"
-            "pub(crate) fn offset_kind(k: &EntityKind, dist: f64, side: Vec2) -> Option<EntityKind> {\n"
-            "    offset_kind_with_gap_type(k, dist, side, 0)\n"
-            "}\n\n",
-            "pub(crate) fn offset_kind(",
-        ),
-        (
-            "crates/engine/src/cmd/modify/offset.rs",
-            "/// Offset a polyline: offset each segment, then join neighbours at their intersections.\n"
-            "pub(crate) fn offset_polyline(pl: &Polyline, d: f64) -> Option<Vec<PolyVertex>> {\n"
-            "    offset_polyline_with_gap_type(pl, d, 0)\n"
-            "}\n\n",
-            "pub(crate) fn offset_polyline(",
-        ),
-    ]
-    for relative_path, block, marker in obsolete_offset_wrappers:
-        if remove_exact(src / relative_path, block, marker):
-            changed.append(f"{relative_path} (unreferenced wrapper)")
-
-    split_helper_path = src / "crates/engine/src/cmd/modify/offset.rs"
-    if replace_exact(
-        split_helper_path,
-        "fn split_segment_at_points(",
-        "#[cfg(test)]\nfn split_segment_at_points(",
-        1,
-    ):
-        changed.append("crates/engine/src/cmd/modify/offset.rs (test-only helper)")
-
     duplicate_test_path = src / "crates/engine/src/cmd/draw2/solid3d.rs"
     duplicate_test = (
         "    #[test]\n"

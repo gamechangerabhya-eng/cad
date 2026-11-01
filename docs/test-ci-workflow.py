@@ -15,7 +15,7 @@ checks = {
     "debug and release APK names are checked explicitly": 'expected="output/cadcraft-$version.apk"' in workflow and 'expected="output/cadcraft-$version-debug.apk"' in workflow,
     "all APK variants receive signature verification": 'apksigner" verify --verbose --print-certs "$apk"' in workflow,
     "release private-key entry and expected alias are validated": 'keytool -list -v -keystore keys/artcraft-builder.jks' in workflow and '-alias artcraftbuilder' in workflow and 'Entry type: PrivateKeyEntry' in workflow,
-    "Rust build cache is keyed to the lockfile": "actions/cache@v4" in workflow and "hashFiles('source/cadcraft/Cargo.lock')" in workflow,
+    "Rust build cache is keyed to the lockfile": "actions/cache@v6" in workflow and "hashFiles('source/cadcraft/Cargo.lock')" in workflow,
     "Rust check and APK build share one target directory": 'CARGO_TARGET_DIR: ${{ github.workspace }}/build/cadcraft/target' in workflow,
 }
 for label, ok in checks.items():
