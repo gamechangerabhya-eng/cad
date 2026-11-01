@@ -8,15 +8,16 @@ import sys
 def replace_exact(path: Path, old: str, new: str, expected_count: int = 1) -> bool:
     text = path.read_text(encoding="utf-8")
     old_count = text.count(old)
-    new_count = text.count(new)
-    if old_count == expected_count and new_count == 0:
+    new_count_outside_old = text.replace(old, "").count(new)
+    if old_count == expected_count and new_count_outside_old == 0:
         path.write_text(text.replace(old, new), encoding="utf-8")
         return True
-    if old_count == 0 and new_count == expected_count:
+    if old_count == 0 and new_count_outside_old == expected_count:
         return False
     raise RuntimeError(
         f"Unexpected CADCraft source in {path}: expected {expected_count} old occurrence(s), "
-        f"found {old_count} old and {new_count} patched occurrence(s); refusing an unverified patch."
+        f"found {old_count} old and {new_count_outside_old} patched occurrence(s); "
+        "refusing an unverified patch."
     )
 
 
@@ -58,6 +59,12 @@ def main() -> None:
             "let wrapped: Vec<&LineRec> = wrapped_records.iter().collect();\n"
             "            same_direction(&wrapped, cands, o, gone, changed, rep);",
             "same_direction(&wrapped_records, cands, o, gone, changed, rep);",
+            1,
+        ),
+        (
+            "crates/ui-egui/tests/save_loss.rs",
+            "*app.session.doc_mut().unwrap().foreign = std::sync::Arc::new(foreign);",
+            "app.session.doc_mut().unwrap().foreign = std::sync::Arc::new(foreign);",
             1,
         ),
     ]
