@@ -112,7 +112,7 @@ jobs:
       - name: Run source and Rust regression gate
         env:
           RUN_RUST_TESTS: "1"
-        run: tools/test-ar-cad.sh
+        run: bash tools/test-ar-cad.sh
 
       - name: Verify source integration
         run: |
