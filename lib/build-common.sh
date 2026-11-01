@@ -615,7 +615,7 @@ marker = android_dir / ".artcraft-android-builder-generated"
 # Bump this whenever the generated launcher template changes so stale wrappers (which live in the
 # source checkout and would otherwise be preserved forever) are regenerated automatically instead
 # of failing against a newer app API.
-GENERATOR_VERSION = "61"
+GENERATOR_VERSION = "62"
 
 # A complete adapter supplied by the user wins over auto-detection. This folder is maintained
 # inside the builder, while its contents are copied into this source checkout.
@@ -2029,7 +2029,7 @@ INTENT_OPEN = {
             Err(error) => log::error!("Could not read the incoming file {path}: {error}"),
         }
 ''',
-    "cadcraft": '''        self.inner.open_path(path);
+    "cadcraft": '''        self.inner.open_path(std::path::Path::new(path));
 ''',
     "pdfcraft": '''        self.inner.open_path(path);
 ''',
@@ -2606,7 +2606,12 @@ else:
 # A type that does not implement `eframe::App` is an inner app state; its desktop `main.rs` wraps it
 # in a tiny struct that forwards `logic`/`ui`. Emit the same wrapper here.
 has_eframe_app = bool(re.search(r"impl\s+eframe::App\s+for\s+" + re.escape(app_type) + r"\b", ui_text))
-has_raw_hook = bool(re.search(r"pub fn raw_input_hook\b", ui_text))
+raw_hook_signature = re.search(r"pub fn raw_input_hook\s*\(([^)]*)\)", ui_text)
+has_raw_hook = raw_hook_signature is not None
+raw_hook_accepts_context = bool(
+    raw_hook_signature
+    and re.search(r"&\s*(?:mut\s+)?(?:egui::)?Context\b", raw_hook_signature.group(1))
+)
 # A close guard: the app's own "may I close?" check. The desktop runs it when its window closes,
 # so a document with unsaved changes asks first ("Do you want to quit without saving unsaved
 # changes?"); the Android back button runs the very same check, so the app's own prompt appears
@@ -2853,7 +2858,10 @@ icon = "@mipmap/ic_launcher"
         inner_logic = "let _ = frame;\n        self.inner.logic(ctx);"
         inner_ui = "let _ = frame;\n        self.inner.ui(ui);"
         if has_raw_hook:
-            inner_hook = "let _ = ctx;\n        self.inner.raw_input_hook(raw);"
+            if raw_hook_accepts_context:
+                inner_hook = "self.inner.raw_input_hook(ctx, raw);"
+            else:
+                inner_hook = "let _ = ctx;\n        self.inner.raw_input_hook(raw);"
         else:
             inner_hook = "let _ = (ctx, raw);"
 
