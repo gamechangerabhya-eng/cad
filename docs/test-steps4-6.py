@@ -8,6 +8,7 @@ palettes=(root/'source/cadcraft/crates/ui-egui/src/palettes.rs').read_text()
 cmdline=(root/'source/cadcraft/crates/ui-egui/src/cmdline.rs').read_text()
 canvas=(root/'source/cadcraft/crates/ui-egui/src/canvas.rs').read_text()
 scrolling=(root/'lib/scrolling.sh').read_text()
+egui_winit=(root/'vendor/egui-winit/src/lib.rs').read_text(encoding="utf-8")
 checks=[]
 def check(label, ok): checks.append((label,bool(ok)))
 # Step 4 — touch drafting/navigation
@@ -18,6 +19,10 @@ check('Zoom Fit control invokes engine Zoom Extents', 'app.session.zoom_extents(
 check('Pinch zoom remains anchored to the gesture focal point', 'crate::animation::zoom_delta' in canvas and 'zoom_about(f64::from(pinch), nav.xf.to_world(at))' in canvas)
 check('Canvas pan remains supported', 'handle_button_navigation(app, nav, inside)' in canvas)
 check('Android two-finger pixel scrolls are patched to pan, not mouse-wheel zoom', 'cfg!(any(target_os = \"macos\", target_os = \"android\"))' in scrolling and 'Android two-finger slides pan instead of zoom' in scrolling)
+check('Android touch-up retains the point long enough for CAD tap input', 'Keep the last Android touch position through the release frame' in egui_winit)
+check('Android multi-touch keeps the canvas anchor available for pan and pinch', 'self.pointer_pos_in_points.is_some() && !cfg!(target_os = \"android\")' in egui_winit)
+check('CADCraft Android hides duplicate desktop menus and tool palettes', 'hide the desktop menu bar on Android' in scrolling and 'hide the duplicate desktop tool palette on Android' in scrolling)
+check('CADCraft Android provides explicit touch zoom in/out controls', '(\"Zoom -\", 0.8), (\"Zoom +\", 1.25)' in scrolling and 'add touch zoom controls' in scrolling)
 # Step 5 — mobile layer/property controls
 check('Android palettes use a narrower 260-point width', 'if cfg!(target_os = "android") { 260.0 } else { 300.0 }' in palettes)
 check('Android palette interactive controls have 40-point minimum size', 'interact_size = vec2(40.0, 40.0)' in palettes)

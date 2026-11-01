@@ -958,7 +958,7 @@ impl State {
                     winit::event::MouseButton::Left,
                 );
             }
-            if self.pointer_pos_in_points.is_some() {
+            if self.pointer_pos_in_points.is_some() && !cfg!(target_os = "android") {
                 self.pointer_pos_in_points = None;
                 self.egui_input.events.push(egui::Event::PointerGone);
             }
@@ -996,10 +996,13 @@ impl State {
                         winit::event::ElementState::Released,
                         winit::event::MouseButton::Left,
                     );
-                    // The pointer should vanish completely to not get any
-                    // hover effects
-                    self.pointer_pos_in_points = None;
-                    self.egui_input.events.push(egui::Event::PointerGone);
+                    // Keep the last Android touch position through the release frame. CAD
+                    // canvases need it to turn the touch-up into a placed point, and the next
+                    // touch will move the pointer to its new position.
+                    if !cfg!(target_os = "android") {
+                        self.pointer_pos_in_points = None;
+                        self.egui_input.events.push(egui::Event::PointerGone);
+                    }
                 }
                 winit::event::TouchPhase::Cancelled => {
                     // The touch was cancelled: the backend took the gesture over (a two-finger

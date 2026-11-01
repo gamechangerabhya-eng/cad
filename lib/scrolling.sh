@@ -8,7 +8,8 @@
 # cancelled so the gesture cannot start a text selection.
 #
 # CADCraft must treat Android's precise pixel deltas as a pan, just as it does on macOS;
-# otherwise its mouse-wheel zoom path consumes the two-finger slide. WordCraft additionally
+# otherwise its mouse-wheel zoom path consumes the two-finger slide. Its canvas-first Android
+# workspace also hides duplicate desktop chrome and exposes touch zoom controls. WordCraft additionally
 # needs app-specific guards for text selection and momentum:
 #
 #  * a gesture press must not start or continue text selection;
@@ -416,6 +417,58 @@ elif app == "cadcraft":
             "precise two-finger deltas to pan."
         )
 
+    # Tool Sets are already duplicated by the touch-first toolbar and consume a fixed 220 points.
+    # Force them closed on Android even when an older saved workspace had the desktop sidebar open.
+    old = "    set_visible(workspace, Panel::ToolSets, app.ui.show_toolsets)?;\n"
+    new = (
+        '    set_visible(workspace, Panel::ToolSets, '
+        'app.ui.show_toolsets && !cfg!(target_os = "android"))?;\n'
+    )
+    path = "crates/ui-egui/src/docking.rs"
+    if fix(path, old, new):
+        fixed.append("crates/ui-egui/src/docking.rs (hide the duplicate desktop tool palette on Android)")
+    elif new not in (src / path).read_text():
+        raise RuntimeError("Unexpected CADCraft tool palette visibility; refusing to build Android with the desktop sidebar.")
+
+    # The in-window menu bar and its tiny desktop targets are not useful alongside the Android
+    # touch toolbar. Keep it hidden regardless of a previously saved desktop preference.
+    old = "        if self.ui.in_window_menu {\n            menus::menu_bar(self, ui);\n"
+    new = "        if self.ui.in_window_menu && !cfg!(target_os = \"android\") {\n            menus::menu_bar(self, ui);\n"
+    path = "crates/ui-egui/src/lib.rs"
+    if fix(path, old, new):
+        fixed.append("crates/ui-egui/src/lib.rs (hide the desktop menu bar on Android)")
+    elif new not in (src / path).read_text():
+        raise RuntimeError("Unexpected CADCraft menu layout; refusing to build Android with the desktop menu bar.")
+
+    # Zoom buttons provide an explicit touch control in addition to two-finger pinch gestures.
+    old = (
+        '                    ui.horizontal(|ui| {\n'
+        '                        for (label, active, command) in toggles {\n'
+    )
+    new = (
+        '                    ui.horizontal(|ui| {\n'
+        '                        for (label, factor) in [("Zoom -", 0.8), ("Zoom +", 1.25)] {\n'
+        '                            let response = ui.add_sized([68.0, 34.0], egui::Button::new(label));\n'
+        '                            crate::control::record_widget(ui, &response, label, "button", None);\n'
+        '                            if response.clicked() {\n'
+        '                                match app.session.state().map(|state| state.view().center) {\n'
+        '                                    Ok(center) => {\n'
+        '                                        if let Err(error) = app.session.zoom_about(factor, center) {\n'
+        '                                            app.session.echo(error.to_string());\n'
+        '                                        }\n'
+        '                                    }\n'
+        '                                    Err(error) => app.session.echo(error.to_string()),\n'
+        '                                }\n'
+        '                            }\n'
+        '                        }\n'
+        '                        for (label, active, command) in toggles {\n'
+    )
+    path = "crates/ui-egui/src/chrome.rs"
+    if fix(path, old, new):
+        fixed.append("crates/ui-egui/src/chrome.rs (add touch zoom controls)")
+    elif new not in (src / path).read_text():
+        raise RuntimeError("Unexpected CADCraft Android status bar; refusing to omit touch zoom controls.")
+
 if fixed:
-    print(f"  Added two-finger-scroll patches to {title}: {', '.join(fixed)}")
+    print(f"  Added Android input and layout patches to {title}: {', '.join(fixed)}")
 PY

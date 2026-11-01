@@ -12,6 +12,8 @@ Step 3 adds a dedicated mobile drafting toolbar to the Android CAD workspace. It
 - Touch targets are 72 × 36 logical points, with a 96-point toolbar region.
 - The start page retains its smaller 52-point brand strip; drafting controls appear only after leaving the start page.
 - Every button dispatches the corresponding existing CADCraft command through `CadApp::start` and records its accessible control label.
+- Android touch-up retains the tapped canvas point so draw commands can accept points without keyboard coordinates; two-finger gestures retain their canvas anchor, with explicit Zoom In/Out touch controls available as a fallback.
+- Android hides the duplicate desktop Tool Sets sidebar and in-window menu bar while keeping the touch drafting toolbar.
 - Desktop toolbar behavior is unchanged.
 
 ## Validation
