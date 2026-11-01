@@ -9,11 +9,12 @@ Step 3 adds a dedicated mobile drafting toolbar to the Android CAD workspace. It
 - Replaced the compact desktop-style Android toolbar with two labelled, horizontally scrollable rows while a drawing is open.
 - **Draw row:** Line, Polyline, Circle, Rectangle, Arc, Ellipse and Polygon.
 - **Edit row:** Move, Copy, Rotate, Scale, Offset, Trim, Extend, Erase, Undo and Redo.
-- Touch targets are 72 × 36 logical points, with a 96-point toolbar region.
+- Android build-time patches enlarge drafting controls to at least 48 logical points high; the independently scrollable command rows remain usable on narrow screens.
 - The start page retains its smaller 52-point brand strip; drafting controls appear only after leaving the start page.
 - Every button dispatches the corresponding existing CADCraft command through `CadApp::start` and records its accessible control label.
 - CADCraft's Android builder patch reads the final canvas position from egui's `Touch::End` event and uses it to complete point prompts even when the pinned egui-winit 0.37 event loop clears pointer hover with `PointerGone`; explicit Zoom In/Out touch controls are also available.
-- Android hides the duplicate desktop Tool Sets sidebar and in-window menu bar while keeping the touch drafting toolbar.
+- Android pinch input uses a shorter recognition deadzone and moves the egui pointer to the live two-finger midpoint, so canvas zoom stays anchored beneath the fingers. A pan-to-pinch transition is only allowed when finger spread changes more than midpoint movement.
+- Android starts with Tool Sets collapsed to preserve canvas width, but keeps a 48-point left rail that reopens the panel; the duplicate in-window desktop menu stays hidden.
 - Desktop toolbar behavior is unchanged.
 
 ## Validation

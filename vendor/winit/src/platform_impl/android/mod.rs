@@ -60,7 +60,7 @@ const PAN_DEADZONE_PX: f64 = 12.0;
 
 /// How far the two fingers' spread must change (physical pixels) before a two-finger gesture can
 /// be a pinch (a zoom) rather than a pan.
-const PINCH_DEADZONE_PX: f64 = 36.0;
+const PINCH_DEADZONE_PX: f64 = 12.0;
 
 /// How much more the two fingers' spread must change than their midpoint moves for a pinch to win
 /// the gesture. A pan holds the fingers a fixed distance apart while the pair slides; a pinch
@@ -286,10 +286,16 @@ enum GestureStep {
     /// Not a two-finger gesture, or still inside the deadzone: the fingers are reported as
     /// touches.
     None,
-    /// A pan: the two fingers' midpoint moved by this much (physical pixels).
-    Pan(PhysicalPosition<f64>),
-    /// A pinch: the fingers spread (or closed) by this factor since the last step.
-    Pinch(f64),
+    /// A pan: the midpoint and its change since the last step (physical pixels).
+    Pan {
+        delta: PhysicalPosition<f64>,
+        center: PhysicalPosition<f64>,
+    },
+    /// A pinch: the spread factor and the current midpoint (physical pixels).
+    Pinch {
+        factor: f64,
+        center: PhysicalPosition<f64>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -627,7 +633,9 @@ impl<T: 'static> EventLoop<T> {
                         // A pan that turns into a clear pinch hands over to the zoom, but only
                         // once the spread has changed twice as much as the deadzone: a gesture
                         // that has already started scrolling does not flip on a twitch.
-                        if spread_change > 2.0 * PINCH_DEADZONE_PX {
+                        if spread_change > 2.0 * PINCH_DEADZONE_PX
+                            && spread_change > PINCH_SPREAD_RATIO * moved
+                        {
                             self.gesture = Gesture::Pinch;
                         }
                     }
@@ -641,16 +649,22 @@ impl<T: 'static> EventLoop<T> {
                         // the deadzone's, and the zoom starts from where the fingers are now.
                         let last = self.gesture_spread.replace(new_spread).unwrap_or(new_spread);
                         let factor = if last > 0.0 { new_spread / last } else { 1.0 };
-                        GestureStep::Pinch(factor)
+                        GestureStep::Pinch {
+                            factor,
+                            center: new_midpoint,
+                        }
                     }
                     Gesture::Pan => {
                         // The fingers' midpoint moved: that is the scroll. The delta is signed
                         // the way a wheel event is (positive = the content moves down/right) and
                         // the content follows the fingers, so it is their own motion.
-                        GestureStep::Pan(PhysicalPosition {
-                            x: (new_midpoint.x - midpoint.x) * PAN_SPEED,
-                            y: (new_midpoint.y - midpoint.y) * PAN_SPEED,
-                        })
+                        GestureStep::Pan {
+                            delta: PhysicalPosition {
+                                x: (new_midpoint.x - midpoint.x) * PAN_SPEED,
+                                y: (new_midpoint.y - midpoint.y) * PAN_SPEED,
+                            },
+                            center: new_midpoint,
+                        }
                     }
                     Gesture::Undecided => GestureStep::None,
                 }
@@ -1087,8 +1101,18 @@ impl<T: 'static> EventLoop<T> {
                     | MotionAction::Move
                     | MotionAction::Cancel => {
                         match self.recognise_touch_gesture(motion_event) {
-                            GestureStep::Pan(delta) => {
+                            GestureStep::Pan { delta, center } => {
                                 trace!("Two-finger scroll {device_id:?} {delta:?}");
+                                callback(
+                                    event::Event::WindowEvent {
+                                        window_id,
+                                        event: event::WindowEvent::CursorMoved {
+                                            device_id,
+                                            position: center,
+                                        },
+                                    },
+                                    self.window_target(),
+                                );
                                 callback(
                                     event::Event::WindowEvent {
                                         window_id,
@@ -1102,8 +1126,18 @@ impl<T: 'static> EventLoop<T> {
                                 );
                                 return input_status;
                             }
-                            GestureStep::Pinch(factor) => {
+                            GestureStep::Pinch { factor, center } => {
                                 trace!("Two-finger pinch {device_id:?} {factor:?}");
+                                callback(
+                                    event::Event::WindowEvent {
+                                        window_id,
+                                        event: event::WindowEvent::CursorMoved {
+                                            device_id,
+                                            position: center,
+                                        },
+                                    },
+                                    self.window_target(),
+                                );
                                 callback(
                                     event::Event::WindowEvent {
                                         window_id,

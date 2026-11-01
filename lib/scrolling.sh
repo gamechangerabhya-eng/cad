@@ -9,7 +9,8 @@
 #
 # CADCraft must treat Android's precise pixel deltas as a pan, just as it does on macOS;
 # otherwise its mouse-wheel zoom path consumes the two-finger slide. Its canvas-first Android
-# workspace also hides duplicate desktop chrome and exposes touch zoom controls. WordCraft additionally
+# workspace keeps Tool Sets collapsed behind a touch-sized left rail, hides the desktop menu,
+# and exposes touch zoom controls. WordCraft additionally
 # needs app-specific guards for text selection and momentum:
 #
 #  * a gesture press must not start or continue text selection;
@@ -401,6 +402,48 @@ elif app == "cadcraft":
     # separate egui-winit 0.36 vendor crate is only a direct launcher dependency, so its pointer
     # retention patch does not affect CADCraft's canvas event loop. Preserve the final Android
     # touch location from egui's Touch::End event at the app boundary instead.
+    # Give Android controls full 48-point touch targets without changing desktop sizing; the
+    # wider command rows remain independently scrollable on narrow phones.
+    chrome_path = "crates/ui-egui/src/chrome.rs"
+    chrome_size_patches = [
+        (
+            "const ANDROID_DRAFTING_BAR_HEIGHT: f32 = 176.0;",
+            "const ANDROID_DRAFTING_BAR_HEIGHT: f32 = 212.0;",
+            "Android drafting toolbar height",
+        ),
+        (
+            "const ANDROID_DRAFTING_BUTTON: [f32; 2] = [72.0, 36.0];",
+            "const ANDROID_DRAFTING_BUTTON: [f32; 2] = [84.0, 48.0];",
+            "Android drafting button target",
+        ),
+        (
+            'egui::Panel::bottom("cc_status").exact_size(44.0)',
+            'egui::Panel::bottom("cc_status").exact_size(56.0)',
+            "Android status bar height",
+        ),
+        (
+            "ui.add_sized([62.0, 34.0], egui::Button::new(",
+            "ui.add_sized([72.0, 48.0], egui::Button::new(",
+            "Android status button target",
+        ),
+    ]
+    for old, new, description in chrome_size_patches:
+        if fix(chrome_path, old, new):
+            fixed.append(f"{chrome_path} ({description})")
+        elif new not in (src / chrome_path).read_text():
+            raise RuntimeError(f"Unexpected CADCraft Android chrome; refusing to omit {description}.")
+
+    old = '    ("Blocks", "ui.dialog.blocks"),\n];\n'
+    new = (
+        '    ("Blocks", "ui.dialog.blocks"),\n'
+        '    ("Tool Sets", "ui.toggle.toolsets"),\n'
+        '];\n'
+    )
+    if fix(chrome_path, old, new):
+        fixed.append("crates/ui-egui/src/chrome.rs (add Tool Sets to the Android touch toolbar)")
+    elif new not in (src / chrome_path).read_text():
+        raise RuntimeError("Unexpected CADCraft Android tools row; refusing to omit the Tool Sets control.")
+
     old = "struct PointerInput {\n    hover_pos: Option<Pos2>,\n"
     new = (
         "struct PointerInput {\n"
@@ -542,18 +585,43 @@ elif app == "cadcraft":
             "precise two-finger deltas to pan."
         )
 
-    # Tool Sets are already duplicated by the touch-first toolbar and consume a fixed 220 points.
-    # Force them closed on Android even when an older saved workspace had the desktop sidebar open.
-    old = "    set_visible(workspace, Panel::ToolSets, app.ui.show_toolsets)?;\n"
-    new = (
+    # The first-run Android preference already collapses Tool Sets. Do not force it closed during
+    # workspace sync: the visible left rail uses ui.toggle.toolsets to reopen the panel on demand.
+    old = (
         '    set_visible(workspace, Panel::ToolSets, '
         'app.ui.show_toolsets && !cfg!(target_os = "android"))?;\n'
     )
+    new = "    set_visible(workspace, Panel::ToolSets, app.ui.show_toolsets)?;\n"
     path = "crates/ui-egui/src/docking.rs"
     if fix(path, old, new):
-        fixed.append("crates/ui-egui/src/docking.rs (hide the duplicate desktop tool palette on Android)")
+        fixed.append("crates/ui-egui/src/docking.rs (allow the left Tool Sets rail to reopen the panel)")
     elif new not in (src / path).read_text():
-        raise RuntimeError("Unexpected CADCraft tool palette visibility; refusing to build Android with the desktop sidebar.")
+        raise RuntimeError("Unexpected CADCraft Tool Sets visibility; refusing to leave the Android rail nonfunctional.")
+
+    old = '    egui::Panel::left("cc_toolsets_strip").exact_size(22.0).resizable(false).frame(egui::Frame::NONE.fill(t.chrome)).show(ui, |ui| {\n'
+    new = (
+        '    egui::Panel::left("cc_toolsets_strip")\n'
+        '        .exact_size(if cfg!(target_os = "android") { 48.0 } else { 22.0 })\n'
+        '        .resizable(false)\n'
+        '        .frame(egui::Frame::NONE.fill(t.chrome))\n'
+        '        .show(ui, |ui| {\n'
+    )
+    path = "crates/ui-egui/src/palettes.rs"
+    if fix(path, old, new):
+        fixed.append("crates/ui-egui/src/palettes.rs (give the Android Tool Sets rail a 48-point tap target)")
+    elif new not in (src / path).read_text():
+        raise RuntimeError("Unexpected CADCraft Tool Sets rail; refusing to build Android with an undersized toggle.")
+
+    old = '            let _ = app.run("ui.toggle.toolsets", json!({"on": true}));\n'
+    new = (
+        '            if let Err(error) = app.run("ui.toggle.toolsets", json!({"on": true})) {\n'
+        '                app.session.echo(error);\n'
+        '            }\n'
+    )
+    if fix(path, old, new):
+        fixed.append("crates/ui-egui/src/palettes.rs (report Tool Sets open errors)")
+    elif new not in (src / path).read_text():
+        raise RuntimeError("Unexpected CADCraft Tool Sets toggle; refusing to suppress panel-open errors.")
 
     # The in-window menu bar and its tiny desktop targets are not useful alongside the Android
     # touch toolbar. Keep it hidden regardless of a previously saved desktop preference.
@@ -566,6 +634,13 @@ elif app == "cadcraft":
         raise RuntimeError("Unexpected CADCraft menu layout; refusing to build Android with the desktop menu bar.")
 
     # Zoom buttons provide an explicit touch control in addition to two-finger pinch gestures.
+    legacy_zoom_size = "ui.add_sized([68.0, 34.0], egui::Button::new(label))"
+    touch_zoom_size = "ui.add_sized([84.0, 48.0], egui::Button::new(label))"
+    if fix(chrome_path, legacy_zoom_size, touch_zoom_size):
+        fixed.append("crates/ui-egui/src/chrome.rs (enlarge Android zoom controls)")
+    elif legacy_zoom_size in (src / chrome_path).read_text() and touch_zoom_size not in (src / chrome_path).read_text():
+        raise RuntimeError("Unexpected CADCraft Android zoom controls; refusing to omit touch-sized zoom buttons.")
+
     old = (
         '                    ui.horizontal(|ui| {\n'
         '                        for (label, active, command) in toggles {\n'
@@ -573,7 +648,7 @@ elif app == "cadcraft":
     new = (
         '                    ui.horizontal(|ui| {\n'
         '                        for (label, factor) in [("Zoom -", 0.8), ("Zoom +", 1.25)] {\n'
-        '                            let response = ui.add_sized([68.0, 34.0], egui::Button::new(label));\n'
+        '                            let response = ui.add_sized([84.0, 48.0], egui::Button::new(label));\n'
         '                            crate::control::record_widget(ui, &response, label, "button", None);\n'
         '                            if response.clicked() {\n'
         '                                match app.session.state().map(|state| state.view().center) {\n'
