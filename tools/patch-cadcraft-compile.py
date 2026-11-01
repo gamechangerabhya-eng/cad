@@ -11,7 +11,7 @@ def replace_exact(path: Path, old: str, new: str, expected_count: int = 1) -> bo
     new_count = text.count(new)
     new_count_outside_old = text.replace(old, "").count(new)
     if old_count == expected_count and new_count_outside_old == 0:
-        if new_count == expected_count:
+        if old in new and new_count == expected_count:
             return False
         path.write_text(text.replace(old, new), encoding="utf-8")
         return True
