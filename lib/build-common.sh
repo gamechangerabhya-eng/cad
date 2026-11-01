@@ -3831,9 +3831,9 @@ bash "$ROOT/lib/ime.sh" "$SRC" "$APP" "$TITLE"
 # egui-winit's stock Android build gates its `arboard` clipboard backend behind
 # `cfg(not(target_os = "android"))`, so on Android its `Clipboard` is only an in-app
 # `String` — copy/paste never reaches the system clipboard. Vendor the builder's
-# patched egui-winit (a self-contained JNI `ClipboardManager` backend) and patch it
-# into the workspace so every app's eframe event loop uses it. The patch is
-# platform-gated, so desktop builds are unaffected.
+# patched egui-winit (a self-contained JNI `ClipboardManager` backend) for crates.io
+# resolutions. `[patch.crates-io]` does not replace an egui-winit package sourced from
+# Git; CADCraft's pinned egui-winit 0.37 touch-up path is handled in `scrolling.sh`.
 echo "Vendoring the Android-compatible egui-winit for $TITLE (system clipboard via JNI)..."
 mkdir -p "$SRC/vendor"
 rm -rf "$SRC/vendor/egui-winit"

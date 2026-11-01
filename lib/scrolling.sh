@@ -397,6 +397,131 @@ if app == "wordcraft":
     ):
         fixed.append("crates/ui-egui/src/scroll.rs (the app makes the coast Android does not send)")
 elif app == "cadcraft":
+    # CADCraft's eframe uses egui-winit 0.37 from its pinned egui Git revision. The builder's
+    # separate egui-winit 0.36 vendor crate is only a direct launcher dependency, so its pointer
+    # retention patch does not affect CADCraft's canvas event loop. Preserve the final Android
+    # touch location from egui's Touch::End event at the app boundary instead.
+    old = "struct PointerInput {\n    hover_pos: Option<Pos2>,\n"
+    new = (
+        "struct PointerInput {\n"
+        "    hover_pos: Option<Pos2>,\n"
+        "    touch_end_pos: Option<Pos2>,\n"
+        "    touch_end_primary_release: bool,\n"
+    )
+    path = "crates/ui-egui/src/canvas.rs"
+    if fix(path, old, new):
+        fixed.append("crates/ui-egui/src/canvas.rs (retain Android touch-up input)")
+    elif new not in (src / path).read_text():
+        raise RuntimeError("Unexpected CADCraft pointer input; refusing to build without Android touch-up handling.")
+
+    old = (
+        "    let pointer = ui.input(|i| PointerInput {\n"
+        "        hover_pos: i.pointer.hover_pos(),\n"
+        "        scroll: i.smooth_scroll_delta,\n"
+        "        mods: i.modifiers,\n"
+        "        middle_down: i.pointer.middle_down(),\n"
+        "        pressed_primary: i.pointer.primary_clicked(),\n"
+        "        pressed_secondary: i.pointer.secondary_clicked(),\n"
+        "        dbl_middle: i.pointer.button_double_clicked(egui::PointerButton::Middle),\n"
+        "        dbl_primary: i.pointer.button_double_clicked(egui::PointerButton::Primary),\n"
+        "    });\n"
+    )
+    new = (
+        "    let pointer = ui.input(|i| {\n"
+        "        let touch_end_pos = if cfg!(target_os = \"android\") {\n"
+        "            i.events.iter().rev().find_map(|event| match event {\n"
+        "                egui::Event::Touch { phase: egui::TouchPhase::End, pos, .. } => Some(*pos),\n"
+        "                _ => None,\n"
+        "            })\n"
+        "        } else {\n"
+        "            None\n"
+        "        };\n"
+        "        PointerInput {\n"
+        "            hover_pos: i.pointer.hover_pos().or(touch_end_pos),\n"
+        "            touch_end_pos,\n"
+        "            touch_end_primary_release: touch_end_pos.is_some()\n"
+        "                && i.events.iter().any(|event| matches!(event,\n"
+        "                    egui::Event::PointerButton {\n"
+        "                        button: egui::PointerButton::Primary,\n"
+        "                        pressed: false,\n"
+        "                        ..\n"
+        "                    }\n"
+        "                )),\n"
+        "            scroll: i.smooth_scroll_delta,\n"
+        "            mods: i.modifiers,\n"
+        "            middle_down: i.pointer.middle_down(),\n"
+        "            pressed_primary: i.pointer.primary_clicked(),\n"
+        "            pressed_secondary: i.pointer.secondary_clicked(),\n"
+        "            dbl_middle: i.pointer.button_double_clicked(egui::PointerButton::Middle),\n"
+        "            dbl_primary: i.pointer.button_double_clicked(egui::PointerButton::Primary),\n"
+        "        }\n"
+        "    });\n"
+    )
+    if fix(path, old, new):
+        fixed.append("crates/ui-egui/src/canvas.rs (read final Android touch position)")
+    elif new not in (src / path).read_text():
+        raise RuntimeError("Unexpected CADCraft pointer construction; refusing to omit Android touch-up position.")
+
+    old = (
+        "    let inside = p.hover_pos.is_some_and(|at| nav.rect.contains(at) "
+        "&& ui.ctx().layer_id_at(at) == Some(ui.layer_id()) && nav.response.hovered());\n"
+    )
+    new = (
+        "    let touch_end_inside = p.touch_end_pos.is_some_and(|at| nav.rect.contains(at));\n"
+        "    let inside = p.hover_pos.is_some_and(|at| nav.rect.contains(at) "
+        "&& ui.ctx().layer_id_at(at) == Some(ui.layer_id()) "
+        "&& (nav.response.hovered() || touch_end_inside));\n"
+    )
+    if fix(path, old, new):
+        fixed.append("crates/ui-egui/src/canvas.rs (accept touch-up inside the canvas)")
+    elif new not in (src / path).read_text():
+        raise RuntimeError("Unexpected CADCraft canvas hit test; refusing to drop Android touch-up points.")
+
+    old = "    primary_clicked: bool,\n    response: &'a egui::Response,\n"
+    new = "    primary_clicked: bool,\n    touch_end_primary_release: bool,\n    response: &'a egui::Response,\n"
+    if fix(path, old, new):
+        fixed.append("crates/ui-egui/src/canvas.rs (track Android touch-up release)")
+    elif new not in (src / path).read_text():
+        raise RuntimeError("Unexpected CADCraft point-click context; refusing to build without release tracking.")
+
+    old = (
+        "    let pressed_primary = context.primary_clicked || (point_prompt "
+        "&& context.response.drag_stopped_by(egui::PointerButton::Primary));\n"
+    )
+    new = (
+        "    let pressed_primary = context.primary_clicked\n"
+        "        || (point_prompt && context.touch_end_primary_release)\n"
+        "        || (point_prompt && context.response.drag_stopped_by(egui::PointerButton::Primary));\n"
+    )
+    if fix(path, old, new):
+        fixed.append("crates/ui-egui/src/canvas.rs (accept Android point-prompt touch-up)")
+    elif new not in (src / path).read_text():
+        raise RuntimeError("Unexpected CADCraft point-click policy; refusing to drop Android drawing points.")
+
+    old = (
+        "    let pressed_primary =\n"
+        "        collect_prompt_clicks(app, ui, PromptClickContext { rect, xf, inside, middle_down, primary_clicked: pressed_primary, response: &resp });\n"
+    )
+    new = (
+        "    let pressed_primary = collect_prompt_clicks(\n"
+        "        app,\n"
+        "        ui,\n"
+        "        PromptClickContext {\n"
+        "            rect,\n"
+        "            xf,\n"
+        "            inside,\n"
+        "            middle_down,\n"
+        "            primary_clicked: pressed_primary,\n"
+        "            touch_end_primary_release: pointer.touch_end_primary_release,\n"
+        "            response: &resp,\n"
+        "        },\n"
+        "    );\n"
+    )
+    if fix(path, old, new):
+        fixed.append("crates/ui-egui/src/canvas.rs (wire Android touch-up to point prompts)")
+    elif new not in (src / path).read_text():
+        raise RuntimeError("Unexpected CADCraft point-click call; refusing to build without Android touch wiring.")
+
     # The Android winit backend reports two-finger slides as pixel deltas. CADCraft already
     # routes precise deltas to pan on macOS, but its desktop-only predicate made Android route
     # them through mouse-wheel zoom instead. Keep the guard exact so source drift fails loudly.

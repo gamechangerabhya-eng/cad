@@ -12,7 +12,7 @@ Step 3 adds a dedicated mobile drafting toolbar to the Android CAD workspace. It
 - Touch targets are 72 × 36 logical points, with a 96-point toolbar region.
 - The start page retains its smaller 52-point brand strip; drafting controls appear only after leaving the start page.
 - Every button dispatches the corresponding existing CADCraft command through `CadApp::start` and records its accessible control label.
-- Android touch-up retains the tapped canvas point so draw commands can accept points without keyboard coordinates; two-finger gestures retain their canvas anchor, with explicit Zoom In/Out touch controls available as a fallback.
+- CADCraft's Android builder patch reads the final canvas position from egui's `Touch::End` event and uses it to complete point prompts even when the pinned egui-winit 0.37 event loop clears pointer hover with `PointerGone`; explicit Zoom In/Out touch controls are also available.
 - Android hides the duplicate desktop Tool Sets sidebar and in-window menu bar while keeping the touch drafting toolbar.
 - Desktop toolbar behavior is unchanged.
 
@@ -20,12 +20,12 @@ Step 3 adds a dedicated mobile drafting toolbar to the Android CAD workspace. It
 
 - `python docs/test-step3.py`: 21/21 source-level acceptance checks passed.
 - `python docs/test-step2.py`: 18/18 source-level regression checks passed.
-- `bash -n` across all shell scripts: passed.
+- `python docs/test-steps4-6.py`: source-level assertions cover Android touch-up and point-prompt wiring.
 - Engine source inspection confirms every listed draw/edit command exists in the imported CADCraft command registry.
 
 ## Not verified
 
-This environment does not contain `rustc`, `cargo`, `cargo-ndk`, Gradle, Android SDK/NDK or ADB. Therefore Rust compilation, Cargo unit tests, APK generation, APK inspection, emulator/device installation and touch interaction tests have **not** been run. The Kotlin compiler alone is not sufficient to build this Rust/C++/Android application.
+Source-level checks do not prove runtime behavior. Rust compilation, Cargo unit tests, APK generation, APK inspection, emulator/device installation and touch interaction tests require the Android build environment and a device; those were not performed during this investigation.
 
 ## Acceptance status
 
