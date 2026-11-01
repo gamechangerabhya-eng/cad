@@ -8,8 +8,11 @@ import sys
 def replace_exact(path: Path, old: str, new: str, expected_count: int = 1) -> bool:
     text = path.read_text(encoding="utf-8")
     old_count = text.count(old)
+    new_count = text.count(new)
     new_count_outside_old = text.replace(old, "").count(new)
     if old_count == expected_count and new_count_outside_old == 0:
+        if new_count == expected_count:
+            return False
         path.write_text(text.replace(old, new), encoding="utf-8")
         return True
     if old_count == 0 and new_count_outside_old == expected_count:
@@ -18,6 +21,23 @@ def replace_exact(path: Path, old: str, new: str, expected_count: int = 1) -> bo
         f"Unexpected CADCraft source in {path}: expected {expected_count} old occurrence(s), "
         f"found {old_count} old and {new_count_outside_old} patched occurrence(s); "
         "refusing an unverified patch."
+    )
+
+
+def remove_exact(path: Path, old: str, marker: str) -> bool:
+    text = path.read_text(encoding="utf-8")
+    old_count = text.count(old)
+    if old_count == 1:
+        updated = text.replace(old, "", 1)
+        if marker in updated:
+            raise RuntimeError(f"Removing the verified block from {path} left its marker behind.")
+        path.write_text(updated, encoding="utf-8")
+        return True
+    if old_count == 0 and marker not in text:
+        return False
+    raise RuntimeError(
+        f"Unexpected CADCraft source in {path}: expected one verified block, "
+        f"found {old_count}; refusing an unverified removal."
     )
 
 
@@ -45,6 +65,43 @@ def main() -> None:
 
     src = Path(sys.argv[1])
     patches = [
+        (
+            "crates/geom/src/intersect.rs",
+            "use crate::{Arc, Bounds2, Circle, Ellipse, Line, Segment, Spline, ToleranceContext, Vec2, angle_in_sweep};",
+            "use crate::{Bounds2, Circle, Ellipse, Line, Segment, Spline, ToleranceContext, Vec2, angle_in_sweep};",
+            1,
+        ),
+        (
+            "crates/engine/src/cmd/modify.rs",
+            "ccw_sweep, intersect_ext, intersect_segments_with_tolerance, line_line_infinite, "
+            "line_line_infinite_with_tolerance, norm_angle,",
+            "ccw_sweep, intersect_segments_with_tolerance, line_line_infinite_with_tolerance, norm_angle,",
+            1,
+        ),
+        (
+            "crates/engine/src/cmd/modify2.rs",
+            "ccw_sweep, intersect_ext, line_circle, line_line_infinite, norm_angle,",
+            "ccw_sweep, intersect_ext, norm_angle,",
+            1,
+        ),
+        (
+            "crates/engine/src/cmd/modify2.rs",
+            "use super::curves::{self, Chain, MAX_GEN, TanObj};",
+            "use super::curves::{self, Chain, MAX_GEN};",
+            1,
+        ),
+        (
+            "crates/engine/src/cmd/modify2/fillet.rs",
+            "curves, line, other, push_entity, set_kind,",
+            "curves, line, other, set_kind,",
+            1,
+        ),
+        (
+            "crates/engine/src/snap.rs",
+            "use cadcraft_geom::{Bounds2, Circle, EPS, Ellipse,",
+            "use cadcraft_geom::{Bounds2, Circle, Ellipse,",
+            1,
+        ),
         (
             "crates/engine/src/cmd/draw2/solid3d.rs",
             '.enabled(|_| true),',
@@ -128,6 +185,82 @@ def main() -> None:
         path = src / relative_path
         if replace_exact(path, old, new, count):
             changed.append(relative_path)
+
+    # These four fork patches are serialized as unused in Cargo.lock and are not dependencies
+    # of any CADCraft workspace manifest. Remove only those exact stale entries.
+    cargo_manifest = src / "Cargo.toml"
+    cargo_lock = src / "Cargo.lock"
+    egui_revision = "6d518fc799681571963842f95b55a6b68431b15a"
+    egui_source = f"git+https://github.com/storytold/egui.git?rev={egui_revision}#{egui_revision}"
+    for crate in ("egui_demo_lib", "egui_extras", "egui_inspection", "egui_system_font_provider"):
+        manifest_entry = (
+            f'{crate} = {{ git = "https://github.com/storytold/egui.git", rev = "{egui_revision}" }}\n'
+        )
+        if remove_exact(cargo_manifest, manifest_entry, f"{crate} = "):
+            changed.append("Cargo.toml ([patch.crates-io])")
+
+        lock_entry = (
+            "[[patch.unused]]\n"
+            f'name = "{crate}"\n'
+            'version = "0.37.0"\n'
+            f'source = "{egui_source}"\n'
+        )
+        if remove_exact(cargo_lock, lock_entry, f'name = "{crate}"'):
+            changed.append("Cargo.lock ([[patch.unused]])")
+
+    nearest_on_polyline = (
+        "/// The nearest point to `p` on a polyline (through tessellated points).\n"
+        "pub(crate) fn nearest_on_polyline(pts: &[Vec2], p: Vec2) -> Option<Vec2> {\n"
+        "    let mut best: Option<(f64, Vec2)> = None;\n"
+        "    for w in pts.windows(2) {\n"
+        "        if let [a, b] = w {\n"
+        "            let c = Line::new(*a, *b).closest(p);\n"
+        "            let d = c.dist(p);\n"
+        "            if best.is_none_or(|(bd, _)| d < bd) {\n"
+        "                best = Some((d, c));\n"
+        "            }\n"
+        "        }\n"
+        "    }\n"
+        "    best.map(|(_, c)| c).or_else(|| pts.first().copied())\n"
+        "}\n\n"
+    )
+    if remove_exact(
+        src / "crates/geom/src/curve.rs",
+        nearest_on_polyline,
+        "pub(crate) fn nearest_on_polyline(",
+    ):
+        changed.append("crates/geom/src/curve.rs (unreferenced helper)")
+
+    obsolete_offset_wrappers = [
+        (
+            "crates/engine/src/cmd/modify/offset.rs",
+            "/// Offset an entity by `dist` towards `side`. Returns the new geometry.\n"
+            "pub(crate) fn offset_kind(k: &EntityKind, dist: f64, side: Vec2) -> Option<EntityKind> {\n"
+            "    offset_kind_with_gap_type(k, dist, side, 0)\n"
+            "}\n\n",
+            "pub(crate) fn offset_kind(",
+        ),
+        (
+            "crates/engine/src/cmd/modify/offset.rs",
+            "/// Offset a polyline: offset each segment, then join neighbours at their intersections.\n"
+            "pub(crate) fn offset_polyline(pl: &Polyline, d: f64) -> Option<Vec<PolyVertex>> {\n"
+            "    offset_polyline_with_gap_type(pl, d, 0)\n"
+            "}\n\n",
+            "pub(crate) fn offset_polyline(",
+        ),
+    ]
+    for relative_path, block, marker in obsolete_offset_wrappers:
+        if remove_exact(src / relative_path, block, marker):
+            changed.append(f"{relative_path} (unreferenced wrapper)")
+
+    split_helper_path = src / "crates/engine/src/cmd/modify/offset.rs"
+    if replace_exact(
+        split_helper_path,
+        "fn split_segment_at_points(",
+        "#[cfg(test)]\nfn split_segment_at_points(",
+        1,
+    ):
+        changed.append("crates/engine/src/cmd/modify/offset.rs (test-only helper)")
 
     duplicate_test_path = src / "crates/engine/src/cmd/draw2/solid3d.rs"
     duplicate_test = (

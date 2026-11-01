@@ -33,10 +33,10 @@ jobs:
 
     steps:
       - name: Checkout AR CAD source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -44,13 +44,13 @@ jobs:
         run: python -m pip install --upgrade pillow
 
       - name: Set up Java 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
           packages: platform-tools
 
@@ -92,7 +92,7 @@ jobs:
           git -C source/cadcraft tag v0.15.1
 
       - name: Cache Rust dependencies and build outputs
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -177,7 +177,7 @@ jobs:
 
       - name: Upload APK and logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ar-cad-android-apk
           path: |

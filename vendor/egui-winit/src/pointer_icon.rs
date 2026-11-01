@@ -110,9 +110,9 @@ fn view_class_name(env: &mut jni::Env<'_>, view: &jni::objects::JObject<'_>) -> 
         })
         .ok()
         .and_then(|n| {
-            env.cast_local::<jni::objects::JString>(n)
+            env.cast_local::<jni::objects::JString<'_>>(n)
                 .ok()
-                .and_then(|s| env.get_string(&s).ok().map(String::from))
+                .and_then(|s| s.try_to_string(env).ok())
         })
         .unwrap_or_default()
 }
