@@ -3930,29 +3930,70 @@ if entry not in s:
     p.write_text(s)
 PY
 
-# egui-wgpu's lost-surface recovery kept the old surface alive while it created the new one: the
-# old `SurfaceState` owns the old `wgpu::Surface`, and it lived until the end of the function, so
-# the new surface was created for a window that still had the old one. Android's Vulkan refuses
-# that (ERROR_NATIVE_WINDOW_IN_USE_KHR) and wgpu panics on the error, so an app whose surface was
-# lost — the app coming back from a file picker, for instance — died with it. Vendor the builder's
-# patched egui-wgpu, which releases the old surface first, and patch it into the workspace.
-echo "Vendoring the surface-fixing egui-wgpu for $TITLE..."
-rm -rf "$SRC/vendor/egui-wgpu"
-cp -a "$ROOT/vendor/egui-wgpu" "$SRC/vendor/egui-wgpu"
-python3 - "$SRC/Cargo.toml" <<'PY'
+# The builder's egui-wgpu vendor is crates.io 0.36.2. CADCraft's exact locked Storytold 0.37
+# revision already removes the old surface before recreating it; a crates.io patch cannot replace
+# that Git-sourced package and only produces Cargo's "patch was not used" warning.
+EGUI_WGPU_REV="6d518fc799681571963842f95b55a6b68431b15a"
+if [[ "$APP" == "cadcraft" ]] && python3 - "$SRC/Cargo.lock" "$EGUI_WGPU_REV" <<'PY'
 from pathlib import Path
 import sys, tomllib
+
+lock_path = Path(sys.argv[1])
+if not lock_path.is_file():
+    raise SystemExit(1)
+revision = sys.argv[2]
+source = f"git+https://github.com/storytold/egui.git?rev={revision}#{revision}"
+packages = tomllib.loads(lock_path.read_text())["package"]
+matches = any(
+    package.get("name") == "egui-wgpu"
+    and package.get("version") == "0.37.0"
+    and package.get("source") == source
+    for package in packages
+)
+raise SystemExit(0 if matches else 1)
+PY
+then
+    echo "Using CADCraft's pinned egui-wgpu 0.37 surface-recovery implementation..."
+    EGUI_WGPU_PATCH="egui-wgpu = { git = \"https://github.com/storytold/egui.git\", rev = \"$EGUI_WGPU_REV\" }"
+else
+    echo "Vendoring the surface-fixing egui-wgpu for $TITLE..."
+    rm -rf "$SRC/vendor/egui-wgpu"
+    cp -a "$ROOT/vendor/egui-wgpu" "$SRC/vendor/egui-wgpu"
+    EGUI_WGPU_PATCH='egui-wgpu = { path = "vendor/egui-wgpu" }'
+fi
+python3 - "$SRC/Cargo.toml" "$EGUI_WGPU_PATCH" <<'PY'
+from pathlib import Path
+import re, sys, tomllib
+
 p = Path(sys.argv[1])
-s = p.read_text()
-entry = 'egui-wgpu = { path = "vendor/egui-wgpu" }'
-import re
-s = re.sub(r'^\s*egui-wgpu\s*=\s*\{.*?\}\s*(?:#.*)?\n?', '', s, flags=re.M)
-if entry not in s:
-    header = "[patch.crates-io]"
-    s = (s.replace(header, header + "\n" + entry, 1) if header in s
-         else s.rstrip() + "\n\n" + header + "\n" + entry + "\n")
-    tomllib.loads(s)
-    p.write_text(s)
+entry = sys.argv[2]
+lines = p.read_text().splitlines()
+result = []
+section = None
+patch_section_found = False
+entry_added = False
+for line in lines:
+    match = re.match(r"^\s*(\[[^]]+\])\s*(?:#.*)?$", line)
+    if match:
+        section = match.group(1)
+        patch_section_found |= section == "[patch.crates-io]"
+    if section == "[patch.crates-io]" and re.match(r"^\s*egui-wgpu\s*=", line):
+        if not entry_added:
+            result.append(entry)
+            entry_added = True
+        continue
+    result.append(line)
+
+if not patch_section_found:
+    result.extend(["", "[patch.crates-io]", entry])
+elif not entry_added:
+    header_index = next(i for i, line in enumerate(result) if line.strip() == "[patch.crates-io]")
+    result.insert(header_index + 1, entry)
+
+updated = "\n".join(result) + "\n"
+tomllib.loads(updated)
+if updated != p.read_text():
+    p.write_text(updated)
 PY
 
 # Every launcher uses the builder's vendored android-activity: the game-activity backend now
