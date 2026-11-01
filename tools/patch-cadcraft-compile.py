@@ -85,6 +85,12 @@ def main() -> None:
             "app.session.doc_mut().unwrap().foreign = std::sync::Arc::new(foreign);",
             1,
         ),
+        (
+            "crates/ui-egui/tests/open_bytes.rs",
+            "larger than the 256 MB CADCraft opens in the browser",
+            "larger than the 256 MB AR CAD opens in the browser",
+            2,
+        ),
     ]
 
     changed = []

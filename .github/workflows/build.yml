@@ -105,6 +105,11 @@ jobs:
       - name: Apply guarded CADCraft compile compatibility fixes
         run: python tools/patch-cadcraft-compile.py source/cadcraft
 
+      - name: Install CJK font for UI regression tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes fonts-noto-cjk
+
       - name: Compile the complete CADCraft workspace
         working-directory: source/cadcraft
         run: cargo check --locked --workspace --all-targets
