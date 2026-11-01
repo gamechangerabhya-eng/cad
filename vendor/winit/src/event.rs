@@ -248,6 +248,9 @@ pub enum WindowEvent {
     /// - **iOS / Android / Web / Orbital:** Unsupported.
     Ime(Ime),
 
+    /// Marks the completion boundary for a requested IME reset.
+    ImeResetCompleted { request_id: u64 },
+
     /// The cursor has moved on the window.
     ///
     /// ## Platform-specific
