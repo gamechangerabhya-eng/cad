@@ -178,6 +178,81 @@ def main() -> None:
             '#[cfg(not(target_os = "android"))] updates_ui::tick(self, ctx);',
             1,
         ),
+        (
+            "crates/engine/src/cmd/modify/offset.rs",
+            "            let d = if left { dist } else { -dist };\n"
+            "            offset_polyline_with_gap_type(&pl, d, gap_type).map(|vs| {",
+            "            let d = if left { dist } else { -dist };\n"
+            "            let offset = if gap_type == 0 {\n"
+            "                offset_polyline(&pl, d)\n"
+            "            } else {\n"
+            "                offset_polyline_with_gap_type(&pl, d, gap_type)\n"
+            "            };\n"
+            "            offset.map(|vs| {",
+            1,
+        ),
+        (
+            "crates/engine/src/cmd/modify/offset.rs",
+            "    let k = offset_kind_with_gap_type(&e.kind, dist.abs(), side, gap_type).ok_or_else(|| bad(\"offset\", \"cannot offset that object\"))?;",
+            "    let k = (if gap_type == 0 {\n"
+            "        offset_kind(&e.kind, dist.abs(), side)\n"
+            "    } else {\n"
+            "        offset_kind_with_gap_type(&e.kind, dist.abs(), side, gap_type)\n"
+            "    }).ok_or_else(|| bad(\"offset\", \"cannot offset that object\"))?;",
+            1,
+        ),
+        (
+            "crates/engine/src/cmd/modify/offset.rs",
+            "fn split_segment_at_points(segment: &Segment, points: &[Vec2], tolerance: &cadcraft_geom::ToleranceContext) -> Option<Vec<Segment>> {",
+            "#[cfg(test)]\n"
+            "fn split_segment_at_points(segment: &Segment, points: &[Vec2], tolerance: &cadcraft_geom::ToleranceContext) -> Option<Vec<Segment>> {",
+            1,
+        ),
+        (
+            "crates/geom/src/curve.rs",
+            "pub(crate) fn nearest_on_polyline(pts: &[Vec2], p: Vec2) -> Option<Vec2> {\n"
+            "    let mut best: Option<(f64, Vec2)> = None;\n"
+            "    for w in pts.windows(2) {\n"
+            "        if let [a, b] = w {\n"
+            "            let c = Line::new(*a, *b).closest(p);\n"
+            "            let d = c.dist(p);\n"
+            "            if best.is_none_or(|(bd, _)| d < bd) {\n"
+            "                best = Some((d, c));\n"
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "    best.map(|(_, c)| c).or_else(|| pts.first().copied())\n"
+            "}",
+            "#[cfg(test)]\n"
+            "pub(crate) fn nearest_on_polyline(pts: &[Vec2], p: Vec2) -> Option<Vec2> {\n"
+            "    let mut best: Option<(f64, Vec2)> = None;\n"
+            "    for w in pts.windows(2) {\n"
+            "        if let [a, b] = w {\n"
+            "            let c = Line::new(*a, *b).closest(p);\n"
+            "            let d = c.dist(p);\n"
+            "            if best.is_none_or(|(bd, _)| d < bd) {\n"
+            "                best = Some((d, c));\n"
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "    best.map(|(_, c)| c).or_else(|| pts.first().copied())\n"
+            "}\n\n"
+            "#[cfg(test)]\n"
+            "mod nearest_on_polyline_tests {\n"
+            "    use super::{Vec2, nearest_on_polyline};\n\n"
+            "    #[test]\n"
+            "    fn projects_to_the_nearest_tessellated_segment() {\n"
+            "        let points = [Vec2::ZERO, Vec2::new(4.0, 0.0), Vec2::new(4.0, 3.0)];\n"
+            "        assert_eq!(nearest_on_polyline(&points, Vec2::new(2.0, 1.0)), Some(Vec2::new(2.0, 0.0)));\n"
+            "    }\n\n"
+            "    #[test]\n"
+            "    fn returns_the_only_point_for_a_single_vertex() {\n"
+            "        let point = Vec2::new(3.0, 4.0);\n"
+            "        assert_eq!(nearest_on_polyline(&[point], Vec2::ZERO), Some(point));\n"
+            "    }\n"
+            "}",
+            1,
+        ),
     ]
 
     changed = []
