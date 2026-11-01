@@ -91,6 +91,12 @@ def main() -> None:
             "larger than the 256 MB AR CAD opens in the browser",
             2,
         ),
+        (
+            "crates/ui-egui/src/i18n/tests.rs",
+            '("about", "About CADCraft"),',
+            '("about", "About AR CAD"),',
+            1,
+        ),
     ]
 
     changed = []
