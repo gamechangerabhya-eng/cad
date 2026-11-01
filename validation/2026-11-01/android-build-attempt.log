@@ -1,0 +1,5 @@
+
+[1] Checking build tools...
+
+ERROR: Rust/Cargo is required.
+No source checkout or existing project files were deleted.

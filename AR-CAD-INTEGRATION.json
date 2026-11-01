@@ -1,0 +1,20 @@
+{
+  "product": "AR CAD",
+  "step": 1,
+  "artcraft_builder": "ArtCraft Android source supplied by user",
+  "cadcraft_version": "0.15.1",
+  "android_application_id": "com.arcad.app",
+  "display_name": "AR CAD",
+  "original_arcad_source_preserved": "legacy/AR-CAD-0.6.1",
+  "debug_build_script": "build-ar-cad-debug.sh",
+  "release_build_script": "build-ar-cad-release.sh",
+  "cadcraft_source_local_git_tag": "v0.15.1",
+  "note": "Local import tag, not an upstream commit tag.",
+  "artcraft_builder_version": "0.4.1",
+  "artcraft_builder_public_release_commit": "5d5e765",
+  "cadcraft_source_revision_status": "Local import label v0.15.1; this archive has no .git metadata, so upstream commit SHA is not verified.",
+  "parity_review": "AR-CAD-AUTODESK-ARTCRAFT-CADCRAFT-PARITY-REVIEW-2026-11-01.md",
+  "apk_build_deferred": true,
+  "dwg_dxf_release_gate": "CRITICAL_OPEN: known loss cases fail closed; independent real-file AutoCAD/ODA verification required.",
+  "three_d_release_gate": "OPEN: B-rep foundation and faceted extrusion groups only; production editable B-rep/boolean/viewer workflows incomplete."
+}

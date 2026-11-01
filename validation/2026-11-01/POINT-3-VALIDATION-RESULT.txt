@@ -1,0 +1,25 @@
+AR CAD Point 3 fail-closed DWG/DXF validation
+Date: 2026-11-01
+
+Source QA: PASS
+- 197/197 total source-level assertions passed.
+- 29/29 critical-gap source assertions passed.
+- Shell syntax checks passed.
+- Python compileall passed.
+
+Rust tests: NOT RUN
+- Explicit RUN_RUST_TESTS=1 ./tools/test-ar-cad.sh attempted.
+- Exit code 2: cargo unavailable.
+- rustc and rustfmt also unavailable.
+
+Interoperability: NOT VERIFIED
+- No real DWG corpus in the workspace.
+- No independent AutoCAD/ODA open-save-reopen run.
+
+APK: DEFERRED BY USER REQUEST
+- No APK build was attempted.
+
+Interpretation:
+- Known unsupported DWG writes now fail closed in the I/O layer.
+- DXF writes fail closed when the source parser reported skipped records.
+- This is not proof of lossless DWG interoperability or Rust runtime correctness.

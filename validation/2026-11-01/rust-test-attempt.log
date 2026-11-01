@@ -1,0 +1,202 @@
+
+== AR CAD source acceptance ==
+PASS - AR CAD brand constant
+PASS - Responsive start page breakpoint
+PASS - Large touch start actions
+PASS - Recent drawings list
+PASS - Touch toolbar target
+PASS - Android canvas-first defaults
+PASS - Android app ID
+PASS - Native app title branding
+PASS - Android phone viewport sizing
+PASS - Upstream self-updater disabled on Android
+PASS - Upstream update prompt disabled on Android
+PASS - Android app icon installed
+PASS - Android default unit test present
+PASS - Responsive layout unit test present
+PASS - About screen uses AR CAD identity
+PASS - Menu labels use AR CAD identity
+PASS - Recovery notices use AR CAD identity
+PASS - App package manifest parses
+
+18/18 source-level checks passed.
+PASS - Android drawing toolbar has a dedicated 134-point height
+PASS - Touch controls use 72x36 point targets
+PASS - File, Draw and Edit rows are horizontally scrollable
+PASS - Android toolbar is only shown while a drawing is open
+PASS - Toolbar commands dispatch through CadApp command router
+PASS - Widget accessibility labels are recorded
+PASS - Draw command is present in CADCraft engine: new
+PASS - Draw command is present in CADCraft engine: open
+PASS - Draw command is present in CADCraft engine: qsave
+PASS - Draw command is present in CADCraft engine: saveas
+PASS - Draw command is present in CADCraft engine: line
+PASS - Draw command is present in CADCraft engine: pline
+PASS - Draw command is present in CADCraft engine: circle
+PASS - Draw command is present in CADCraft engine: rectang
+PASS - Draw command is present in CADCraft engine: arc
+PASS - Draw command is present in CADCraft engine: ellipse
+PASS - Draw command is present in CADCraft engine: polygon
+PASS - Modify command is present in CADCraft engine: move
+PASS - Modify command is present in CADCraft engine: copy
+PASS - Modify command is present in CADCraft engine: rotate
+PASS - Modify command is present in CADCraft engine: scale
+PASS - Modify command is present in CADCraft engine: offset
+PASS - Modify command is present in CADCraft engine: trim
+PASS - Modify command is present in CADCraft engine: extend
+PASS - Modify command is present in CADCraft engine: erase
+
+25/25 Step 3 source checks passed.
+PASS - Android status strip uses a 44-point touch target band
+PASS - Grid, Snap, Ortho, Polar, OSnap and Dynamic Input toggles exist
+PASS - Android drafting toggles dispatch existing transparent commands
+PASS - Zoom Fit control invokes engine Zoom Extents
+PASS - Pinch zoom remains anchored to the gesture focal point
+PASS - Canvas pan remains supported
+PASS - Android palettes use a narrower 260-point width
+PASS - Android palette interactive controls have 40-point minimum size
+PASS - Layer and Properties sections remain in the mobile palette
+PASS - Properties editing continues through CAD command dispatcher
+PASS - Android toolbar exposes New, Open, Save and Save As
+PASS - Android command bar uses almost the full canvas width
+PASS - Android command bar has a larger 38-point height
+PASS - Android command prompt keywords have expanded touch hit areas
+
+14/14 Step 4–6 source checks passed.
+PASS - Engine autosave and crash-recovery tests are included
+PASS - Engine save-backup and Save As regression tests are included
+PASS - UI recovery and recent-file persistence tests are included
+PASS - DXF parser/writer test suite is included
+PASS - Unified QA runner includes previous source regression suites
+PASS - Unified QA runner includes Steps 7–10 acceptance suite
+PASS - Unified QA runner supports full Rust workspace component tests
+PASS - CI workflow invokes the unified QA runner
+PASS - Android Rust build remains ARM64-only and aligned with min SDK
+PASS - Android workflow installs the ARM64 Rust target
+PASS - Release profile enables thin LTO
+PASS - APK package identity remains com.arcad.app
+PASS - Release workflow requires persistent signing secrets
+PASS - Workflow defaults to a debug build until release signing is configured
+PASS - Release verification checks APK signature
+PASS - Release artifact checksum is generated
+PASS - Release checklist clearly blocks public release until device tests pass
+
+17/17 Steps 7–10 source checks passed.
+PASS - Tolerance context used by finite segment intersections
+PASS - Shared tolerance reaches infinite and finite line intersections
+PASS - Shared tolerance reaches line-circle and circle-circle intersections
+PASS - Segment arc intersections reuse the caller tolerance
+PASS - Regression tests cover shared line-circle and circle-circle tolerance
+PASS - Ellipse-line intersection solver is exported
+PASS - Spline-line intersection solver is exported
+PASS - Ellipse closest point is analytically refined
+PASS - Spline closest point is knot-span refined
+PASS - Geometry regression tests cover ellipse and spline closest points
+PASS - Geometry regression tests cover ellipse and spline intersections
+PASS - OSNAP uses exact ellipse/spline versus line intersections
+PASS - Polyline offset joins use drawing-aware tolerances
+PASS - Spline offset tessellation scales with model bounds
+
+14/14 geometry priority source checks passed.
+PASS - OSNAP derives one tolerance from nearby drawing geometry
+PASS - OSNAP exact segment intersections share the operation tolerance
+PASS - OSNAP apparent intersections share the operation tolerance
+PASS - Ellipse/spline OSNAP intersections share the operation tolerance
+PASS - TRIM/EXTEND derive one tolerance from target and cutting edges
+PASS - TRIM/EXTEND use tolerance-aware intersections
+PASS - Line FILLET/CHAMFER use shared tolerance for corner intersections
+PASS - Line FILLET uses drawing-aware degeneracy checks
+PASS - Curved FILLET uses an explicit shared tolerance
+PASS - Spline EXTEND uses a shared operation tolerance
+PASS - OFFSET polyline joins use tolerance-aware intersections
+PASS - Geometry kernel exposes a tolerance-aware fillet solver
+PASS - Region boundary operations expose a shared-tolerance API
+PASS - Region endpoint snapping exposes a shared-tolerance API
+PASS - Extreme coordinate scale regression test is present
+PASS - Tolerance-aware fillet regression test is present
+PASS - Region shared-tolerance regression test is present
+PASS - Ellipse closest-point refinement accepts shared tolerance
+PASS - Spline closest-point refinement accepts shared tolerance
+PASS - Large-coordinate curve closest-point regression is present
+
+20/20 tolerance migration source checks passed.
+PASS - BREAK derives an operation tolerance from source geometry
+PASS - BREAK rejects degenerate lines using drawing tolerance
+PASS - BREAK line endpoints use normalized parameter tolerance
+PASS - BREAK arc endpoint classification uses angular tolerance
+PASS - BREAK polyline cut uses drawing-unit tolerance
+PASS - JOIN derives tolerance from selected segment bounds
+PASS - JOIN endpoint matching uses shared tolerance
+PASS - OFFSET validates generated segment lengths
+PASS - OFFSET excludes adjacent segment pairs from crossing test
+PASS - OFFSET rejects non-finite generated vertices
+PASS - OFFSET detects non-adjacent crossings and routes closed line-only contours to planar repair
+
+11/11 precision safety source checks passed.
+PASS - robust orientation predicate uses an exact binary64 integer determinant
+PASS - proper segment crossing predicate is available
+PASS - distance-based collinearity predicate is available
+PASS - geometry crate exports robust predicates
+PASS - 2D vector normalization no longer uses fixed EPS cutoff
+PASS - circle through three points uses drawing-space collinearity
+PASS - circle through three points solves in a normalized frame
+PASS - spline fit tangent sanitization accepts tiny nonzero directions
+PASS - spline knot parameterization no longer imposes a 1e-12 distance floor
+PASS - OFFSETGAPTYPE exposes 0, 1 and 2
+PASS - OFFSET gap style uses finite intersections for fillet/chamfer
+PASS - round gap connector computes a signed bulge
+PASS - chamfer gap connector is represented as a straight segment
+PASS - OFFSET command reads the drawing's gap setting
+PASS - OFFSET tests cover all three gap modes
+PASS - OFFSET tests reject invalid gap mode
+PASS - circle and arc OFFSET no longer use a fixed world-unit radius cutoff
+PASS - OFFSET rejects non-finite distances and side points before geometry construction
+PASS - round OFFSET connector uses the shared angular tolerance
+PASS - microscopic circle OFFSET has a regression test
+PASS - OFFSET rejects non-finite numeric inputs in regression tests
+PASS - spline fit length scaling preserves tiny nonzero geometry
+PASS - orientation uses exact significand alignment and integer products
+PASS - orientation fast filter falls back on overflow and underflow
+PASS - orientation has adversarial mixed-exponent regression tests
+PASS - region kernel exposes single-winding loop repair
+PASS - OFFSET routes closed line-only crossings through planar repair
+PASS - planar repair rejects ambiguous multiple filled faces
+PASS - planar repair regression tests cover bow-tie rejection and simple loops
+PASS - planar repair exposes multi-loop face extraction
+PASS - OFFSET has a multi-result polyline path
+PASS - OFFSET command emits every repaired loop
+PASS - spline intersections use homogeneous Bezier decomposition
+PASS - spline intersections use Bernstein sign variation and recursive subdivision
+PASS - spline intersection regression covers three roots in one span
+PASS - ellipse line solver normalizes coefficients and checks residual
+
+36/36 P1 source checks passed.
+
+== Shell and Python syntax ==
+PASS - shell syntax: ./vendor/arboard/tools/run_with_leaks.sh
+PASS - shell syntax: ./vendor/android-activity/android-games-sdk/import-games-sdk.sh
+PASS - shell syntax: ./tools/test-ar-cad.sh
+PASS - shell syntax: ./tools/ar-cad-preflight.sh
+PASS - shell syntax: ./legacy/AR-CAD-0.6.1/tools/run-dxf-tests.sh
+PASS - shell syntax: ./legacy/AR-CAD-0.6.1/third_party/cadcraft-main/cadcraft-main/packaging/icons.sh
+PASS - shell syntax: ./legacy/AR-CAD-0.6.1/third_party/cadcraft-main/cadcraft-main/packaging/linux/flatpak-bundle.sh
+PASS - shell syntax: ./legacy/AR-CAD-0.6.1/third_party/cadcraft-main/cadcraft-main/packaging/linux/postinst.sh
+PASS - shell syntax: ./legacy/AR-CAD-0.6.1/third_party/cadcraft-main/cadcraft-main/packaging/linux/package.sh
+PASS - shell syntax: ./legacy/AR-CAD-0.6.1/third_party/cadcraft-main/cadcraft-main/packaging/web/package.sh
+PASS - shell syntax: ./legacy/AR-CAD-0.6.1/third_party/cadcraft-main/cadcraft-main/packaging/macos/import-cert.sh
+PASS - shell syntax: ./legacy/AR-CAD-0.6.1/third_party/cadcraft-main/cadcraft-main/packaging/macos/package.sh
+PASS - shell syntax: ./legacy/AR-CAD-0.6.1/third_party/cadcraft-main/cadcraft-main/packaging/freebsd/package.sh
+PASS - shell syntax: ./legacy/AR-CAD-0.6.1/third_party/cadcraft-main/cadcraft-main/packaging/env.sh
+PASS - shell syntax: ./legacy/AR-CAD-0.6.1/native/build-android.sh
+PASS - shell syntax: ./adapters/photocraft/prepare.sh
+PASS - shell syntax: ./build.sh
+PASS - shell syntax: ./build-debug.sh
+PASS - shell syntax: ./build-ar-cad-release.sh
+PASS - shell syntax: ./build-ar-cad-debug.sh
+PASS - shell syntax: ./clean.sh
+PASS - shell syntax: ./lib/build-common.sh
+PASS - shell syntax: ./lib/scrolling.sh
+PASS - shell syntax: ./lib/subcraft.sh
+PASS - shell syntax: ./lib/ime.sh
+PASS - Python compileall
+ERROR: RUN_RUST_TESTS=1 but cargo is unavailable.

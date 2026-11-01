@@ -1,0 +1,178 @@
+name: AR CAD Android APK
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: APK build mode
+        required: true
+        default: debug
+        type: choice
+        options: [debug, release]
+
+concurrency:
+  group: ar-cad-android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-ar-cad:
+    name: Build AR CAD (CADCraft 0.15.1)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      ARTCRAFT_TARGET_SDK: "35"
+      ARTCRAFT_BUILD_TOOLS_VERSION: "35.0.0"
+      ARTCRAFT_NDK_VERSION: "27.2.12479018"
+      CARGO_TARGET_DIR: ${{ github.workspace }}/build/cadcraft/target
+
+    steps:
+      - name: Checkout AR CAD source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python image dependency
+        run: python -m pip install --upgrade pillow
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform, build tools and NDK
+        run: |
+          # `yes` may receive SIGPIPE after sdkmanager has consumed all licences.
+          # Disable pipefail only for this pipeline so sdkmanager's exit status is authoritative.
+          set +o pipefail
+          yes | sdkmanager --licenses >/dev/null
+          set -o pipefail
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" version
+
+      - name: Set up Rust 1.95.0
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.95.0
+          targets: aarch64-linux-android
+
+      - name: Install pinned cargo-ndk
+        run: |
+          cargo install cargo-ndk --version 4.1.2 --locked
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          cargo ndk -V
+
+      - name: Restore CADCraft source import metadata
+        run: |
+          # Git does not store nested .git directories. Recreate the local import metadata
+          # expected by the ArtCraft builder; this does not claim an upstream commit hash.
+          git -C source/cadcraft init
+          git -C source/cadcraft config user.name "AR CAD CI"
+          git -C source/cadcraft config user.email "ci@ar-cad.invalid"
+          git -C source/cadcraft add -A
+          git -C source/cadcraft commit -m "Import supplied CADCraft 0.15.1 source archive"
+          git -C source/cadcraft remote add origin https://github.com/storytold/cadcraft.git
+          git -C source/cadcraft tag v0.15.1
+
+      - name: Cache Rust dependencies and build outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            build/cadcraft/target
+          key: ${{ runner.os }}-rust-1.95-android-ndk-27.2.12479018-${{ hashFiles('source/cadcraft/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-rust-1.95-android-ndk-27.2.12479018-
+
+      - name: Compile the complete CADCraft workspace
+        working-directory: source/cadcraft
+        run: cargo check --locked --workspace --all-targets
+
+      - name: Run source and Rust regression gate
+        env:
+          RUN_RUST_TESTS: "1"
+        run: tools/test-ar-cad.sh
+
+      - name: Verify source integration
+        run: |
+          bash -n build.sh build-debug.sh build-ar-cad-debug.sh build-ar-cad-release.sh
+          python -m compileall -q lib docs
+          test "$(grep -m1 'version = ' source/cadcraft/Cargo.toml | cut -d '"' -f2)" = "0.15.1"
+          test -f branding/ar-cad-icon.png
+          test -f legacy/AR-CAD-0.6.1/app/build.gradle.kts
+
+      - name: Restore persistent release signing key
+        env:
+          BUILD_MODE: ${{ inputs.mode || (startsWith(github.ref, 'refs/tags/v') && 'release') || 'debug' }}
+          AR_CAD_KEYSTORE_BASE64: ${{ secrets.AR_CAD_KEYSTORE_BASE64 }}
+          AR_CAD_KEYSTORE_PASSWORD: ${{ secrets.AR_CAD_KEYSTORE_PASSWORD }}
+        run: |
+          if [ "$BUILD_MODE" = "release" ]; then
+            if [ -z "$AR_CAD_KEYSTORE_BASE64" ] || [ -z "$AR_CAD_KEYSTORE_PASSWORD" ]; then
+              echo "Release builds require AR_CAD_KEYSTORE_BASE64 and AR_CAD_KEYSTORE_PASSWORD repository secrets." >&2
+              exit 1
+            fi
+            mkdir -p keys
+            printf '%s' "$AR_CAD_KEYSTORE_BASE64" | base64 --decode > keys/artcraft-builder.jks
+            printf '%s' "$AR_CAD_KEYSTORE_PASSWORD" > keys/.keystore-password
+            chmod 600 keys/artcraft-builder.jks keys/.keystore-password
+            keytool -list -v -keystore keys/artcraft-builder.jks -storepass "$AR_CAD_KEYSTORE_PASSWORD" -alias artcraftbuilder | grep -F "Entry type: PrivateKeyEntry"
+          fi
+
+      - name: Build APK
+        env:
+          BUILD_MODE: ${{ inputs.mode || (startsWith(github.ref, 'refs/tags/v') && 'release') || 'debug' }}
+        run: |
+          if [ "$BUILD_MODE" = "debug" ]; then
+            ./build-ar-cad-debug.sh
+          else
+            ./build-ar-cad-release.sh
+          fi
+
+      - name: Verify APK package, variant and signature
+        env:
+          BUILD_MODE: ${{ inputs.mode || (startsWith(github.ref, 'refs/tags/v') && 'release') || 'debug' }}
+        run: |
+          version="$(python -c 'import tomllib; print(tomllib.load(open("source/cadcraft/Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
+          if [ "$BUILD_MODE" = "release" ]; then
+            expected="output/cadcraft-$version.apk"
+          else
+            expected="output/cadcraft-$version-debug.apk"
+          fi
+          test -f "$expected" || { echo "Expected APK missing: $expected" >&2; find output -maxdepth 1 -type f -print >&2; exit 1; }
+          apk="$expected"
+          test "$(stat -c%s "$apk")" -gt 1000000
+          unzip -tq "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep -F "package: name='com.arcad.app'"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep -F "application-label:'AR CAD'"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$apk"
+          echo "Verified $apk"
+          sha256sum "$apk" | tee output/SHA256SUMS.txt
+
+      - name: Upload APK and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ar-cad-android-apk
+          path: |
+            output/*.apk
+            logs/*.log
+            output/SHA256SUMS.txt
+          if-no-files-found: warn
+          retention-days: 14

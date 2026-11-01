@@ -1,0 +1,29 @@
+AR CAD AUTODESK / ARTCRAFT / CADCRAFT PARITY REVIEW
+Date: 2026-11-01
+Project: /mnt/data/arcad-review/AR-CAD
+
+SOURCE UPDATE
+- Added explicit ANDROID_INSPECT_TOOLS definition in source/cadcraft/crates/ui-egui/src/chrome.rs.
+- Added Audit quick action in Android Tools row, next to Distance, Area, List, Layers, Properties and Blocks.
+- Strengthened docs/test-step3.py to check the actual constant declaration, all exact action tuples, and AUDIT command registration.
+- Updated full Autodesk 2027 / ArtCraft / CADCraft / AR CAD parity matrix and project release status.
+
+SOURCE-LEVEL VALIDATION
+- Unified assertions: 209/209 passed.
+- Breakdown: 18 + 37 + 14 + 17 + 14 + 20 + 11 + 49 + 29 = 209.
+- Step 3 mobile controls: 37/37 passed.
+- Shell syntax: PASS.
+- Python compileall: PASS.
+- Integration manifest JSON parse: PASS.
+
+NOT VERIFIED
+- Rust compilation/unit tests: blocked; cargo, rustc and rustfmt unavailable.
+- Gradle / Android SDK / ADB / emulator: unavailable.
+- APK build/install/device test: intentionally deferred.
+- AutoCAD/ODA DWG/DXF round-trip corpus: not run.
+
+RELEASE STATUS
+- AR CAD is not yet AutoCAD feature-equivalent.
+- Point 3 DWG/DXF interoperability remains CRITICAL / OPEN; fail-closed blocking prevents known lossy saves but is not a lossless codec.
+- Production editable B-rep solids, booleans and 3D viewport remain OPEN.
+- Autodesk 2027 guided Geometry Cleanup, Trace/Markup, connected project collaboration and an in-app drawing-aware assistant remain gaps.

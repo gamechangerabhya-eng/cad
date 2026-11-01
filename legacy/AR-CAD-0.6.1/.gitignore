@@ -1,0 +1,19 @@
+# Local Android/Gradle configuration and build output
+local.properties
+.gradle/
+build/
+app/build/
+app/.cxx/
+app/src/main/jniLibs/
+*.iml
+.idea/
+
+# Native build output
+native/target/
+third_party/cadcraft-main/cadcraft-main/target/
+
+# Local test artifacts
+tools/dxf-tests.jar
+
+__pycache__/
+*.pyc

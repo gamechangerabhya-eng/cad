@@ -1,0 +1,23 @@
+[package]
+name = "arcad-ffi"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT OR Apache-2.0"
+description = "AR CAD native document and command bridge over the CADCraft engine"
+
+[lib]
+name = "arcad_ffi"
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+cadcraft-doc = { path = "../../third_party/cadcraft-main/cadcraft-main/crates/doc" }
+cadcraft-engine = { path = "../../third_party/cadcraft-main/cadcraft-main/crates/engine" }
+cadcraft-io = { path = "../../third_party/cadcraft-main/cadcraft-main/crates/io" }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "unwind"
