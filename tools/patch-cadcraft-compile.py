@@ -97,6 +97,30 @@ def main() -> None:
             '("about", "About AR CAD"),',
             1,
         ),
+        (
+            "crates/ui-egui/src/menus.rs",
+            "crate::updates_ui::check_now(app);",
+            '#[cfg(not(target_os = "android"))] crate::updates_ui::check_now(app);',
+            1,
+        ),
+        (
+            "crates/ui-egui/src/lib.rs",
+            "pub updates_rt: updates_ui::Runtime,",
+            '#[cfg(not(target_os = "android"))] pub updates_rt: updates_ui::Runtime,',
+            1,
+        ),
+        (
+            "crates/ui-egui/src/lib.rs",
+            "updates_rt: updates_ui::Runtime::default(),",
+            '#[cfg(not(target_os = "android"))] updates_rt: updates_ui::Runtime::default(),',
+            1,
+        ),
+        (
+            "crates/ui-egui/src/lib.rs",
+            "updates_ui::tick(self, ctx);",
+            '#[cfg(not(target_os = "android"))] updates_ui::tick(self, ctx);',
+            1,
+        ),
     ]
 
     changed = []
