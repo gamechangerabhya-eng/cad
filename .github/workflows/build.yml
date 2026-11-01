@@ -102,6 +102,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-rust-1.95-android-ndk-27.2.12479018-
 
+      - name: Apply guarded CADCraft compile compatibility fixes
+        run: python tools/patch-cadcraft-compile.py source/cadcraft
+
       - name: Compile the complete CADCraft workspace
         working-directory: source/cadcraft
         run: cargo check --locked --workspace --all-targets

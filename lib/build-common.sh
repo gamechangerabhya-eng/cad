@@ -579,6 +579,10 @@ if fixed:
     print(f"  Repaired upstream compile errors still present in {title}: {', '.join(fixed)}")
 PY
 
+if [[ "$APP" == "cadcraft" ]]; then
+    python3 "$ROOT/tools/patch-cadcraft-compile.py" "$SRC"
+fi
+
 # Two-finger scrolling (the app-side gesture guard and the momentum hand-off) is applied by its
 # own script, so it can be turned off for testing by commenting out the line below. It patches the
 # app's own source at build time; the scroll synthesis itself is the vendored winit/egui-winit
