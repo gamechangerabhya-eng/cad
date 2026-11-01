@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Two-finger scrolling — the app-side patches.
+# Two-finger scrolling — Android input patches.
 #
 # A phone or tablet has no wheel, so a two-finger drag is the only way to scroll. The
 # builder's vendored winit backend (see lib/build-common.sh) recognises the gesture the way
@@ -7,15 +7,12 @@
 # from the touch path: the fingers' touches are withheld, and the first finger's touch is
 # cancelled so the gesture cannot start a text selection.
 #
-# Two things are left for the app:
+# CADCraft must treat Android's precise pixel deltas as a pan, just as it does on macOS;
+# otherwise its mouse-wheel zoom path consumes the two-finger slide. WordCraft additionally
+# needs app-specific guards for text selection and momentum:
 #
-#  * the press that arrives with the *first* finger must not start a selection: the canvas
-#    has to know a gesture is in progress, which it learns from the touch the backend
-#    cancelled;
-#  * the momentum. The web build leaves the flick's coast to the browser (Chromium
-#    synthesises it and sends it as more wheel events), and so do macOS and Windows; Android
-#    sends no momentum of its own for a two-finger pan, so the app has to make the coast
-#    itself, exactly as it does on Linux.
+#  * a gesture press must not start or continue text selection;
+#  * Android sends no momentum for a two-finger pan, so WordCraft makes the coast itself.
 #
 # Every edit is guarded and idempotent: it applies only while the original text is still
 # present, so it no-ops once upstream handles it, and is re-applied on a fresh checkout.
@@ -398,6 +395,26 @@ if app == "wordcraft":
         without_android,
     ):
         fixed.append("crates/ui-egui/src/scroll.rs (the app makes the coast Android does not send)")
+elif app == "cadcraft":
+    # The Android winit backend reports two-finger slides as pixel deltas. CADCraft already
+    # routes precise deltas to pan on macOS, but its desktop-only predicate made Android route
+    # them through mouse-wheel zoom instead. Keep the guard exact so source drift fails loudly.
+    old = (
+        '                app.canvas.scroll_pans = cfg!(target_os = "macos") && '
+        "*unit == egui::MouseWheelUnit::Point;\n"
+    )
+    new = (
+        '                app.canvas.scroll_pans = cfg!(any(target_os = "macos", target_os = "android")) && '
+        "*unit == egui::MouseWheelUnit::Point;\n"
+    )
+    path = "crates/ui-egui/src/canvas.rs"
+    if fix(path, old, new):
+        fixed.append("crates/ui-egui/src/canvas.rs (Android two-finger slides pan instead of zoom)")
+    elif new not in (src / path).read_text():
+        raise RuntimeError(
+            "Unexpected CADCraft scroll policy; refusing to build Android without routing "
+            "precise two-finger deltas to pan."
+        )
 
 if fixed:
     print(f"  Added two-finger-scroll patches to {title}: {', '.join(fixed)}")

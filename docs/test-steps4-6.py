@@ -7,6 +7,7 @@ chrome=(root/'source/cadcraft/crates/ui-egui/src/chrome.rs').read_text()
 palettes=(root/'source/cadcraft/crates/ui-egui/src/palettes.rs').read_text()
 cmdline=(root/'source/cadcraft/crates/ui-egui/src/cmdline.rs').read_text()
 canvas=(root/'source/cadcraft/crates/ui-egui/src/canvas.rs').read_text()
+scrolling=(root/'lib/scrolling.sh').read_text()
 checks=[]
 def check(label, ok): checks.append((label,bool(ok)))
 # Step 4 — touch drafting/navigation
@@ -16,6 +17,7 @@ check('Android drafting toggles dispatch existing transparent commands', 'run_tr
 check('Zoom Fit control invokes engine Zoom Extents', 'app.session.zoom_extents()' in chrome and '"Zoom Fit"' in chrome)
 check('Pinch zoom remains anchored to the gesture focal point', 'crate::animation::zoom_delta' in canvas and 'zoom_about(f64::from(pinch), nav.xf.to_world(at))' in canvas)
 check('Canvas pan remains supported', 'handle_button_navigation(app, nav, inside)' in canvas)
+check('Android two-finger pixel scrolls are patched to pan, not mouse-wheel zoom', 'cfg!(any(target_os = \"macos\", target_os = \"android\"))' in scrolling and 'Android two-finger slides pan instead of zoom' in scrolling)
 # Step 5 — mobile layer/property controls
 check('Android palettes use a narrower 260-point width', 'if cfg!(target_os = "android") { 260.0 } else { 300.0 }' in palettes)
 check('Android palette interactive controls have 40-point minimum size', 'interact_size = vec2(40.0, 40.0)' in palettes)
