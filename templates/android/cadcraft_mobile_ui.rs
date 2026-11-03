@@ -14,6 +14,14 @@ const NAV_BAR_HEIGHT: f32 = 64.0;
 const TOOL_HIT_TARGET: Vec2 = vec2(48.0, 48.0);
 const TOOL_PANEL_MAX_HEIGHT: f32 = 360.0;
 const WIDE_LAYOUT_BREAKPOINT: f32 = 760.0;
+const MEDIUM_LAYOUT_BREAKPOINT: f32 = 520.0;
+const EXPANDED_LAYOUT_MIN_HEIGHT: f32 = 420.0;
+const APP_BAR_BRAND_BREAKPOINT: f32 = 360.0;
+const APP_BAR_SAVE_BREAKPOINT: f32 = 280.0;
+const TOOL_SHEET_TWO_COLUMN_BREAKPOINT: f32 = 340.0;
+const TOOL_SHEET_THREE_COLUMN_BREAKPOINT: f32 = 540.0;
+const TOOL_SHEET_MAX_WIDTH: f32 = 520.0;
+const EXPANDED_TOOL_SHEET_MAX_WIDTH: f32 = 620.0;
 const SPACE_XS: f32 = 4.0;
 const SPACE_SM: f32 = 8.0;
 const SPACE_MD: f32 = 12.0;
@@ -25,6 +33,40 @@ const BODY_TEXT_SIZE: f32 = 14.0;
 const CONTROL_TEXT_SIZE: f32 = 13.0;
 const CATEGORY_TEXT_SIZE: f32 = 12.0;
 const MOBILE_STATE_ID: &str = "ar_cad_android_workspace";
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum LayoutClass {
+    #[default]
+    Compact,
+    Medium,
+    Expanded,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ResponsiveLayout {
+    class: LayoutClass,
+}
+
+impl ResponsiveLayout {
+    fn new(viewport: Vec2) -> Self {
+        let class = if viewport.x >= WIDE_LAYOUT_BREAKPOINT && viewport.y > EXPANDED_LAYOUT_MIN_HEIGHT {
+            LayoutClass::Expanded
+        } else if viewport.x >= MEDIUM_LAYOUT_BREAKPOINT {
+            LayoutClass::Medium
+        } else {
+            LayoutClass::Compact
+        };
+        Self { class }
+    }
+
+    fn is_expanded(self) -> bool {
+        self.class == LayoutClass::Expanded
+    }
+
+    fn tool_sheet_max_width(self) -> f32 {
+        if self.is_expanded() { EXPANDED_TOOL_SHEET_MAX_WIDTH } else { TOOL_SHEET_MAX_WIDTH }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum Category {
@@ -78,6 +120,7 @@ impl Category {
 struct WorkspaceState {
     category: Category,
     tools_open: bool,
+    advanced_console_open: bool,
     search: String,
 }
 
@@ -94,9 +137,10 @@ pub fn draw(app: &mut CadApp, ui: &mut egui::Ui) {
     app.ui.in_window_menu = false;
 
     let t = Tokens::get();
-    let mut state = ctx.data(|data| data.get_temp::<WorkspaceState>(Id::new(MOBILE_STATE_ID))).unwrap_or_default();
+    let mut state = ctx.data(|data| data.get_temp::<WorkspaceState>(Id::unique(MOBILE_STATE_ID))).unwrap_or_default();
     let content = ctx.content_rect();
-    let wide = content.width() >= WIDE_LAYOUT_BREAKPOINT && content.height() > 420.0;
+    let layout = ResponsiveLayout::new(vec2(content.width(), content.height()));
+    app.ui.show_command_line = state.advanced_console_open;
 
     show_app_bar(app, ui, &mut state, t);
 
@@ -105,7 +149,7 @@ pub fn draw(app: &mut CadApp, ui: &mut egui::Ui) {
         show_selection_bar(app, ui, selected_count, t);
     }
 
-    if wide {
+    if layout.is_expanded() {
         show_wide_tool_rail(app, ui, &mut state, t);
     } else {
         show_phone_navigation(ui, &mut state, t);
@@ -121,10 +165,12 @@ pub fn draw(app: &mut CadApp, ui: &mut egui::Ui) {
     });
 
     if state.tools_open {
-        show_tool_sheet(app, &ctx, &mut state, t, wide);
+        show_tool_sheet(app, &ctx, &mut state, t, layout);
     }
-    if !state.tools_open {
-        show_view_controls(app, &ctx, t, wide);
+    if app.session.current_prompt().is_some() && !state.advanced_console_open {
+        show_command_card(app, &ctx, t, layout);
+    } else if !state.tools_open {
+        show_view_controls(app, &ctx, t, layout);
     }
     show_status_message(app, &ctx, t);
 
@@ -137,7 +183,8 @@ pub fn draw(app: &mut CadApp, ui: &mut egui::Ui) {
     crate::autosave::show(app, &ctx);
     crate::autosave::gpu_notice(app, &ctx);
 
-    ctx.data_mut(|data| data.insert_temp(Id::new(MOBILE_STATE_ID), state));
+    state.advanced_console_open = app.ui.show_command_line;
+    ctx.data_mut(|data| data.insert_temp(Id::unique(MOBILE_STATE_ID), state));
     app.frame_ms = crate::now_ms() - started;
 }
 
@@ -147,17 +194,22 @@ fn show_app_bar(app: &mut CadApp, ui: &mut egui::Ui, state: &mut WorkspaceState,
         .frame(egui::Frame::NONE.fill(t.chrome).stroke(Stroke::new(BORDER_WIDTH, t.border)))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
+                let viewport_width = ui.available_width();
                 ui.add_space(SPACE_SM);
-                let compact = ui.available_width() < 520.0;
-                ui.label(RichText::new(if compact { "AR" } else { "AR CAD" }).strong().size(TITLE_TEXT_SIZE).color(t.text));
-                ui.separator();
+                if viewport_width >= APP_BAR_BRAND_BREAKPOINT {
+                    let compact = viewport_width < 520.0;
+                    ui.label(RichText::new(if compact { "AR" } else { "AR CAD" }).strong().size(TITLE_TEXT_SIZE).color(t.text));
+                    ui.separator();
+                }
 
                 if let Ok(document) = app.session.state() {
                     if document.is_dirty() {
                         ui.label(RichText::new("●").color(t.accent).size(10.0))
                             .on_hover_text(crate::tl!("Unsaved changes"));
                     }
-                    let title_width = (ui.available_width() - 208.0).clamp(64.0, 220.0);
+                    let quick_save = viewport_width >= APP_BAR_SAVE_BREAKPOINT;
+                    let action_width = if quick_save { 4.0 * TOOL_HIT_TARGET.x + 3.0 * SPACE_SM } else { 3.0 * TOOL_HIT_TARGET.x + 2.0 * SPACE_SM };
+                    let title_width = (ui.available_width() - action_width - SPACE_SM).clamp(0.0, 220.0);
                     let title = ui.add_sized(
                         [title_width, TOOL_HIT_TARGET.y],
                         egui::Button::new(RichText::new(&document.title).size(BODY_TEXT_SIZE).color(t.text)).fill(t.chrome),
@@ -169,7 +221,15 @@ fn show_app_bar(app: &mut CadApp, ui: &mut egui::Ui, state: &mut WorkspaceState,
                         state.search.clear();
                     }
                 } else {
-                    ui.label(RichText::new(crate::tl!("No drawing")).size(BODY_TEXT_SIZE).color(t.text_dim));
+                    let quick_save = viewport_width >= APP_BAR_SAVE_BREAKPOINT;
+                    let action_width = if quick_save { 4.0 * TOOL_HIT_TARGET.x + 3.0 * SPACE_SM } else { 3.0 * TOOL_HIT_TARGET.x + 2.0 * SPACE_SM };
+                    let label_width = (ui.available_width() - action_width - SPACE_SM).clamp(0.0, 220.0);
+                    if label_width >= 72.0 {
+                        ui.add_sized(
+                            [label_width, TOOL_HIT_TARGET.y],
+                            egui::Label::new(RichText::new(crate::tl!("No drawing")).size(BODY_TEXT_SIZE).color(t.text_dim)),
+                        );
+                    }
                 }
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -177,7 +237,9 @@ fn show_app_bar(app: &mut CadApp, ui: &mut egui::Ui, state: &mut WorkspaceState,
                         state.category = Category::More;
                         state.tools_open = !state.tools_open;
                     });
-                    action_button(ui, "Save", "Save drawing", t, app.session.state().is_ok(), || app.start("qsave"));
+                    if viewport_width >= APP_BAR_SAVE_BREAKPOINT {
+                        action_button(ui, "Save", "Save drawing", t, app.session.state().is_ok(), || app.start("qsave"));
+                    }
                     let can_redo = app.session.state().is_ok_and(|document| !document.redo.is_empty());
                     action_button(ui, "↷", "Redo", t, can_redo, || app.start("redo"));
                     let can_undo = app.session.state().is_ok_and(|document| !document.undo.is_empty());
@@ -273,13 +335,15 @@ fn category_button(ui: &mut egui::Ui, state: &mut WorkspaceState, category: Cate
     }
 }
 
-fn show_tool_sheet(app: &mut CadApp, ctx: &egui::Context, state: &mut WorkspaceState, t: Tokens, wide: bool) {
+fn show_tool_sheet(app: &mut CadApp, ctx: &egui::Context, state: &mut WorkspaceState, t: Tokens, layout: ResponsiveLayout) {
     let screen = ctx.content_rect();
-    let max_width = (screen.width() - 24.0).max(220.0).min(if wide { 620.0 } else { 520.0 });
-    let max_height = (screen.height() * 0.48).min(TOOL_PANEL_MAX_HEIGHT).max(140.0);
-    let bottom_offset = if wide { 12.0 } else { NAV_BAR_HEIGHT + 8.0 };
+    let max_width = (screen.width() - SPACE_MD * 2.0).max(0.0).min(layout.tool_sheet_max_width());
+    let bottom_offset = if layout.is_expanded() { SPACE_MD } else { NAV_BAR_HEIGHT + SPACE_SM };
+    let available_height = (screen.height() - APP_BAR_HEIGHT - bottom_offset - SPACE_MD * 2.0).max(0.0);
+    let max_height = (screen.height() * 0.48).min(TOOL_PANEL_MAX_HEIGHT).min(available_height);
+    let columns = tool_sheet_columns(max_width);
 
-    egui::Area::new(Id::new("ar_cad_mobile_tool_sheet"))
+    egui::Area::new(Id::unique("ar_cad_mobile_tool_sheet"))
         .order(egui::Order::Foreground)
         .anchor(Align2::CENTER_BOTTOM, vec2(0.0, -bottom_offset))
         .show(ctx, |ui| {
@@ -311,6 +375,21 @@ fn show_tool_sheet(app: &mut CadApp, ctx: &egui::Context, state: &mut WorkspaceS
                         show_open_drawings(app, ui, state, t);
                     }
 
+                    if state.category == Category::More {
+                        action_button(
+                            ui,
+                            "Command console",
+                            "Open the advanced command console",
+                            t,
+                            true,
+                            || {
+                                state.advanced_console_open = !state.advanced_console_open;
+                                app.ui.show_command_line = state.advanced_console_open;
+                                state.tools_open = false;
+                            },
+                        );
+                    }
+
                     let registry = crate::control::all_commands(app);
                     if let Some(commands) = registry.as_array() {
                         let filtered: Vec<&Value> = commands
@@ -321,11 +400,10 @@ fn show_tool_sheet(app: &mut CadApp, ctx: &egui::Context, state: &mut WorkspaceS
                                     && command.get("label").and_then(Value::as_str).is_some_and(|label| !label.is_empty())
                             })
                             .collect();
-                        let columns = if max_width >= 540.0 { 3 } else { 2 };
-                        let button_width = ((max_width - 52.0) / columns as f32).clamp(128.0, 244.0);
+                        let button_width = ((max_width - SPACE_SM * (columns - 1) as f32) / columns as f32).max(0.0);
                         egui::ScrollArea::vertical()
                             .id_salt("ar_cad_mobile_command_results")
-                            .max_height((max_height - 128.0).max(96.0))
+                            .max_height(ui.available_height().max(0.0))
                             .show_rows(ui, 56.0, filtered.len().div_ceil(columns), |ui, rows| {
                                 for row in rows {
                                     ui.horizontal(|ui| {
@@ -445,7 +523,7 @@ fn show_status_message(app: &CadApp, ctx: &egui::Context, t: Tokens) {
     if let Ok(remaining) = std::time::Duration::try_from_secs_f64((5000.0 - elapsed) / 1000.0) {
         ctx.request_repaint_after(remaining);
     }
-    egui::Area::new(Id::new("ar_cad_mobile_status_message"))
+    egui::Area::new(Id::unique("ar_cad_mobile_status_message"))
         .order(egui::Order::Foreground)
         .anchor(Align2::LEFT_TOP, vec2(12.0, APP_BAR_HEIGHT + 8.0))
         .show(ctx, |ui| {
@@ -460,9 +538,9 @@ fn show_status_message(app: &CadApp, ctx: &egui::Context, t: Tokens) {
         });
 }
 
-fn show_view_controls(app: &mut CadApp, ctx: &egui::Context, t: Tokens, wide: bool) {
-    let bottom_offset = if wide { 10.0 } else { NAV_BAR_HEIGHT + 10.0 };
-    egui::Area::new(Id::new("ar_cad_mobile_view_controls"))
+fn show_view_controls(app: &mut CadApp, ctx: &egui::Context, t: Tokens, layout: ResponsiveLayout) {
+    let bottom_offset = if layout.is_expanded() { 10.0 } else { NAV_BAR_HEIGHT + 10.0 };
+    egui::Area::new(Id::unique("ar_cad_mobile_view_controls"))
         .order(egui::Order::Foreground)
         .anchor(Align2::RIGHT_BOTTOM, vec2(-10.0, -bottom_offset))
         .show(ctx, |ui| {
@@ -479,6 +557,66 @@ fn show_view_controls(app: &mut CadApp, ctx: &egui::Context, t: Tokens, wide: bo
                     });
                 });
         });
+}
+
+fn show_command_card(app: &mut CadApp, ctx: &egui::Context, t: Tokens, layout: ResponsiveLayout) {
+    let Some(prompt) = app.session.current_prompt() else {
+        return;
+    };
+    let screen = ctx.content_rect();
+    let max_width = (screen.width() - SPACE_MD * 2.0).max(0.0).min(TOOL_SHEET_MAX_WIDTH);
+    let bottom_offset = if layout.is_expanded() { SPACE_MD } else { NAV_BAR_HEIGHT + SPACE_SM };
+    let mut submit = false;
+    let mut confirm = false;
+    let mut cancel = false;
+
+    egui::Area::new(Id::unique("ar_cad_mobile_command_card"))
+        .order(egui::Order::Foreground)
+        .anchor(Align2::CENTER_BOTTOM, vec2(0.0, -bottom_offset))
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(t.panel)
+                .stroke(Stroke::new(BORDER_WIDTH, t.border))
+                .corner_radius(PANEL_RADIUS)
+                .inner_margin(SPACE_MD)
+                .show(ui, |ui| {
+                    ui.set_width(max_width);
+                    ui.label(RichText::new(app.session.prompt_text()).strong().color(t.text).size(BODY_TEXT_SIZE));
+                    ui.add_sized(
+                        [ui.available_width(), TOOL_HIT_TARGET.y],
+                        egui::TextEdit::singleline(&mut app.cmd.buffer).hint_text(crate::tl!("Enter a value or coordinate")),
+                    );
+                    ui.horizontal_wrapped(|ui| {
+                        if !app.cmd.buffer.trim().is_empty() {
+                            action_button(ui, "Apply", "Submit the entered value", t, true, || submit = true);
+                        }
+                        if prompt.accept.enter && app.cmd.buffer.trim().is_empty() {
+                            action_button(ui, "Confirm", "Accept the current prompt", t, true, || confirm = true);
+                        }
+                        action_button(ui, "Cancel", "Cancel the active command", t, true, || cancel = true);
+                    });
+                });
+        });
+
+    if cancel {
+        app.cmd.buffer.clear();
+        app.session.cancel();
+    } else if submit {
+        let value = std::mem::take(&mut app.cmd.buffer);
+        app.cmdline(&value);
+    } else if confirm {
+        app.cmdline("");
+    }
+}
+
+fn tool_sheet_columns(width: f32) -> usize {
+    if width >= TOOL_SHEET_THREE_COLUMN_BREAKPOINT {
+        3
+    } else if width >= TOOL_SHEET_TWO_COLUMN_BREAKPOINT {
+        2
+    } else {
+        1
+    }
 }
 
 fn command_button(ui: &mut egui::Ui, app: &mut CadApp, command: &Value, t: Tokens, button_width: f32) -> bool {
@@ -504,10 +642,14 @@ fn command_button(ui: &mut egui::Ui, app: &mut CadApp, command: &Value, t: Token
         Some(key) => format!("{label}  ·  {key}"),
         None => label.to_owned(),
     };
-    let response = ui.add_enabled(
-        enabled,
-        egui::Button::new(RichText::new(caption).size(CONTROL_TEXT_SIZE).color(t.text)).min_size(vec2(button_width, TOOL_HIT_TARGET.y)),
-    );
+    let response = ui
+        .add_enabled_ui(enabled, |ui| {
+            ui.add_sized(
+                [button_width, TOOL_HIT_TARGET.y],
+                egui::Button::new(RichText::new(caption).size(CONTROL_TEXT_SIZE).color(t.text)),
+            )
+        })
+        .inner;
     let response = response.on_hover_text(crate::i18n::t(label));
     crate::control::record_widget(ui, &response, crate::i18n::t(label), "button", None);
     let response = if enabled { response } else { response.on_disabled_hover_text(crate::i18n::t(reason)) };
@@ -633,8 +775,23 @@ fn matches_search(command: &Value, query: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{Category, matches_category, matches_search, requires_arguments_for_start};
+    use super::{Category, LayoutClass, ResponsiveLayout, matches_category, matches_search, requires_arguments_for_start, tool_sheet_columns};
     use serde_json::json;
+
+    #[test]
+    fn responsive_layout_uses_compact_medium_and_expanded_classes() {
+        assert_eq!(ResponsiveLayout::new(egui::vec2(400.0, 800.0)).class, LayoutClass::Compact);
+        assert_eq!(ResponsiveLayout::new(egui::vec2(600.0, 400.0)).class, LayoutClass::Medium);
+        assert_eq!(ResponsiveLayout::new(egui::vec2(900.0, 600.0)).class, LayoutClass::Expanded);
+        assert_eq!(ResponsiveLayout::new(egui::vec2(900.0, 350.0)).class, LayoutClass::Medium);
+    }
+
+    #[test]
+    fn tool_sheet_uses_one_column_when_two_touch_targets_would_not_fit() {
+        assert_eq!(tool_sheet_columns(296.0), 1);
+        assert_eq!(tool_sheet_columns(340.0), 2);
+        assert_eq!(tool_sheet_columns(540.0), 3);
+    }
 
     #[test]
     fn categories_route_registered_commands_without_replacing_the_registry() {
