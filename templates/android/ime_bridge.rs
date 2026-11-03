@@ -48,7 +48,7 @@ pub mod ime {
                 Ok(insets) => {
                     self.safe_area_supported = Some(true);
                     let pixels_per_point = ctx.pixels_per_point().max(0.1);
-                    raw.safe_area_insets = Some(egui::SafeAreaInsets(egui::MarginF32 {
+                    raw.safe_area_insets = Some(egui::SafeAreaInsets(egui::epaint::MarginF32 {
                         left: insets[0] as f32 / pixels_per_point,
                         top: insets[1] as f32 / pixels_per_point,
                         right: insets[2] as f32 / pixels_per_point,
