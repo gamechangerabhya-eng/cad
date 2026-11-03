@@ -444,14 +444,22 @@ elif app == "cadcraft":
     elif new not in (src / chrome_path).read_text():
         raise RuntimeError("Unexpected CADCraft Android tools row; refusing to omit the Tool Sets control.")
 
+    old = "    pan_last: Option<Pos2>,\n"
+    new = "    pan_last: Option<Pos2>,\n    suppress_android_touch_until_next_start: bool,\n"
+    path = "crates/ui-egui/src/canvas.rs"
+    if fix(path, old, new):
+        fixed.append("crates/ui-egui/src/canvas.rs (remember cancelled Android multitouch gestures)")
+    elif new not in (src / path).read_text():
+        raise RuntimeError("Unexpected CADCraft canvas state; refusing to build without Android touch-cancel tracking.")
+
     old = "struct PointerInput {\n    hover_pos: Option<Pos2>,\n"
     new = (
         "struct PointerInput {\n"
         "    hover_pos: Option<Pos2>,\n"
         "    touch_end_pos: Option<Pos2>,\n"
         "    touch_end_primary_release: bool,\n"
+        "    suppress_touch: bool,\n"
     )
-    path = "crates/ui-egui/src/canvas.rs"
     if fix(path, old, new):
         fixed.append("crates/ui-egui/src/canvas.rs (retain Android touch-up input)")
     elif new not in (src / path).read_text():
@@ -463,13 +471,32 @@ elif app == "cadcraft":
         "        scroll: i.smooth_scroll_delta,\n"
         "        mods: i.modifiers,\n"
         "        middle_down: i.pointer.middle_down(),\n"
-        "        pressed_primary: i.pointer.primary_clicked(),\n"
+        "        pressed_primary: i.pointer.primary_clicked()\n"
+        "            && !app.canvas.suppress_android_touch_until_next_start,\n"
         "        pressed_secondary: i.pointer.secondary_clicked(),\n"
         "        dbl_middle: i.pointer.button_double_clicked(egui::PointerButton::Middle),\n"
         "        dbl_primary: i.pointer.button_double_clicked(egui::PointerButton::Primary),\n"
         "    });\n"
     )
     new = (
+        "    let (android_touch_started, android_touch_cancelled) = ui.input(|i| {\n"
+        "        let started = i.events.iter().any(|event| matches!(event,\n"
+        "            egui::Event::Touch { phase: egui::TouchPhase::Start, .. }\n"
+        "            | egui::Event::PointerButton { pressed: true, .. }\n"
+        "        ));\n"
+        "        let cancelled = i.events.iter().any(|event| matches!(event,\n"
+        "            egui::Event::Touch { phase: egui::TouchPhase::Cancel, .. }\n"
+        "        ));\n"
+        "        (started, cancelled)\n"
+        "    });\n"
+        "    if cfg!(target_os = \"android\") {\n"
+        "        if android_touch_started && !android_touch_cancelled {\n"
+        "            app.canvas.suppress_android_touch_until_next_start = false;\n"
+        "        }\n"
+        "        if android_touch_cancelled {\n"
+        "            app.canvas.suppress_android_touch_until_next_start = true;\n"
+        "        }\n"
+        "    }\n"
         "    let pointer = ui.input(|i| {\n"
         "        let touch_end_pos = if cfg!(target_os = \"android\") {\n"
         "            i.events.iter().rev().find_map(|event| match event {\n"
@@ -482,7 +509,10 @@ elif app == "cadcraft":
         "        PointerInput {\n"
         "            hover_pos: i.pointer.hover_pos().or(touch_end_pos),\n"
         "            touch_end_pos,\n"
+        "            suppress_touch: cfg!(target_os = \"android\")\n"
+        "                && app.canvas.suppress_android_touch_until_next_start,\n"
         "            touch_end_primary_release: touch_end_pos.is_some()\n"
+        "                && !app.canvas.suppress_android_touch_until_next_start\n"
         "                && i.events.iter().any(|event| matches!(event,\n"
         "                    egui::Event::PointerButton {\n"
         "                        button: egui::PointerButton::Primary,\n"
@@ -521,7 +551,7 @@ elif app == "cadcraft":
         raise RuntimeError("Unexpected CADCraft canvas hit test; refusing to drop Android touch-up points.")
 
     old = "    primary_clicked: bool,\n    response: &'a egui::Response,\n"
-    new = "    primary_clicked: bool,\n    touch_end_primary_release: bool,\n    response: &'a egui::Response,\n"
+    new = "    primary_clicked: bool,\n    touch_end_primary_release: bool,\n    suppress_touch: bool,\n    response: &'a egui::Response,\n"
     if fix(path, old, new):
         fixed.append("crates/ui-egui/src/canvas.rs (track Android touch-up release)")
     elif new not in (src / path).read_text():
@@ -532,9 +562,10 @@ elif app == "cadcraft":
         "&& context.response.drag_stopped_by(egui::PointerButton::Primary));\n"
     )
     new = (
-        "    let pressed_primary = context.primary_clicked\n"
-        "        || (point_prompt && context.touch_end_primary_release)\n"
-        "        || (point_prompt && context.response.drag_stopped_by(egui::PointerButton::Primary));\n"
+        "    let pressed_primary = !context.suppress_touch\n"
+        "        && (context.primary_clicked\n"
+        "            || (point_prompt && context.touch_end_primary_release)\n"
+        "            || (point_prompt && context.response.drag_stopped_by(egui::PointerButton::Primary)));\n"
     )
     if fix(path, old, new):
         fixed.append("crates/ui-egui/src/canvas.rs (accept Android point-prompt touch-up)")
@@ -556,6 +587,7 @@ elif app == "cadcraft":
         "            middle_down,\n"
         "            primary_clicked: pressed_primary,\n"
         "            touch_end_primary_release: pointer.touch_end_primary_release,\n"
+        "            suppress_touch: pointer.suppress_touch,\n"
         "            response: &resp,\n"
         "        },\n"
         "    );\n"

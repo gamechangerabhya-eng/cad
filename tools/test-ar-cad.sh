@@ -11,6 +11,7 @@ python3 docs/test-step2.py
 python3 docs/test-step3.py
 python3 docs/test-steps4-6.py
 python3 docs/test-steps7-10.py
+python3 docs/test-activation.py
 python3 docs/test-geometry-priority.py
 python3 docs/test-tolerance-migration-complete.py
 python3 docs/test-precision-safety-followup.py

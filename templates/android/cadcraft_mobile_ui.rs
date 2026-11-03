@@ -314,6 +314,14 @@ fn show_selection_bar(app: &mut CadApp, ui: &mut egui::Ui, selected: usize, stat
                 ui.label(RichText::new(crate::tf!("{n} selected", n = selected)).strong().color(t.text));
                 egui::ScrollArea::horizontal().id_salt("ar_cad_mobile_selection_actions").show(ui, |ui| {
                     ui.horizontal(|ui| {
+                        let zoom_to_selection = ui.add_sized(
+                            TOOL_HIT_TARGET,
+                            egui::Button::new(crate::tl!("Zoom")).fill(t.control),
+                        );
+                        crate::control::record_widget(ui, &zoom_to_selection, crate::tl!("Zoom to selection"), "button", None);
+                        if zoom_to_selection.clicked() {
+                            let _ = app.run("zoom.object", Value::Null);
+                        }
                         let registry = crate::control::all_commands(app);
                         for (label, command) in [
                             ("Move", "move"),
@@ -816,16 +824,18 @@ fn show_view_controls(app: &mut CadApp, ctx: &egui::Context, t: Tokens, layout: 
         .order(egui::Order::Foreground)
         .anchor(Align2::RIGHT_BOTTOM, vec2(-10.0, -bottom_offset))
         .show(ctx, |ui| {
-            egui::Frame::new().fill(t.chrome).stroke(Stroke::new(BORDER_WIDTH, t.border)).corner_radius(CONTROL_RADIUS).inner_margin(SPACE_XS).show(
-                ui,
-                |ui| {
-                    ui.vertical(|ui| {
-                        action_button(ui, "+", "Zoom in", t, true, || zoom(app, 0.8));
-                        action_button(ui, "−", "Zoom out", t, true, || zoom(app, 1.25));
+            egui::Frame::new()
+                .fill(t.chrome)
+                .stroke(Stroke::new(BORDER_WIDTH, t.border))
+                .corner_radius(CONTROL_RADIUS)
+                .inner_margin(SPACE_XS)
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        action_button(ui, "−", "Zoom out", t, true, || zoom(app, 0.8));
+                        action_button(ui, "+", "Zoom in", t, true, || zoom(app, 1.25));
                         action_button(ui, "Fit", "Fit drawing", t, true, || app.start("zoom.extents"));
                     });
-                },
-            );
+                });
         });
 }
 

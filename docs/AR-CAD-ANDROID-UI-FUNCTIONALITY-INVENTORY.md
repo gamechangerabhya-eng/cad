@@ -50,7 +50,7 @@ contract. Selection requirements and disabled reasons are determined by each com
 | Measurement and inquiry | Inquiry menu, Tool Sets, command line | `dist`, `area`, `list`, audit and inquiry commands | Per command metadata | Varies | Per command metadata | A few inspection actions on Android toolbar | Measure/Annotate category | Preserve existing result reporting |
 | Layers and properties | Layers/Properties palettes, menus, command line | UI dialog/toggle commands and layer/property commands | Menu/command metadata | Property edits may require selection | Per command metadata | Palettes can be toggled; Android uses a compact toolset rail | Expandable Layers/Properties sheet and contextual Properties action | Verify existing palette and property editors open |
 | Snaps, grid, drafting modes and display toggles | Status bar, Options, command line | Existing UI toggles and engine settings | Menu/command metadata | None | Toggle/default parameters | Existing enlarged Android status controls | View category and command guidance area | Preserve setting effects; no new snapping math |
-| Zoom, pan, fit, orbit and view navigation | Canvas gestures, status bar, View menu, toolbar | Existing view commands and `Session` view operations | Per command metadata | None | Command parameters/defaults | Pinch/two-finger pan and enlarged zoom controls | Floating view controls and View category | Verify touch gestures and view commands |
+| Zoom, pan, fit, orbit and view navigation | Canvas gestures, status bar, View menu, toolbar | Existing view commands and `Session` view operations | Per command metadata | None | Command parameters/defaults | Pinch/two-finger pan with compact zoom controls | Compact floating controls, Fit Drawing, selected-object Zoom, and View category | Verify touch gestures and view commands |
 | New / open / recent / save / save as | File menu, toolbar, Start page, command line | `new`, `open`, `qsave`, `saveas`, recent-file UI | `Cmd+N`, `Cmd+O`, `Cmd+S` where registered | None | Existing file-service prompts | Existing Android toolbar and SAF-backed launcher services | Top bar and Document sheet | Verify SAF picker, open, save and save-as |
 | Import, export, exchange and share | File/Insert menus, toolbar, command line | Existing exchange/import/export commands | Per command metadata | Varies | Per command metadata | Some actions on existing toolbar; other actions via menus/command line | Document sheet and command search | Verify actual command availability; no placeholder controls |
 | Blocks, references, layouts, plotting and other advanced features | Menus, palettes, dialogs, Tool Sets, command line | Existing UI and engine command registrations | Per command metadata | Varies | Per command metadata | Most available through desktop-oriented menus/palettes/command line | Searchable command palette and expandable category groups | Verify all engine command specs can be found |
@@ -80,6 +80,31 @@ command sheet cap, and 760-point wide-layout breakpoint.
   panel rendering, and canvas drawing use existing app/engine APIs.
 - Existing egui canvas touch-up, point-prompt, pan, pinch/zoom, snap, grip, command-line, and IME
   pathways remain in place.
+- The fixed-height app bar remains independent of the active command; command-specific prompts stay
+  in the responsive command card. The default workspace keeps the desktop command line hidden.
+- Compact horizontal zoom controls are a fallback for gesture navigation. Zoom In/Out use the
+  existing `Session::zoom_about` direction, Fit Drawing invokes `zoom.extents`, and the selection
+  action strip invokes the existing `zoom.object` command for the current selection.
+- A cancelled Android touch now suppresses primary presses and point-prompt releases until a new
+  contact begins, preventing the first finger of a pinch/pan handoff from becoming a CAD point.
+
+## First-install activation
+
+CADCraft's generated Android Activity gates the workspace on first install. It validates input
+off the UI thread with PBKDF2-HMAC-SHA-256 (600,000 iterations) and compares the derived verifier
+in constant time. The supplied activation value is not stored in committed source; the generated
+Activity contains only the KDF parameters, random salt, and verifier. Successful activation is
+persisted as an AES-GCM record protected by Android Keystore. Incoming file intents are deferred
+until activation succeeds. Invalid attempts receive temporary increasing delays; the user is not
+permanently locked out. The gate is local and can deter casual access, but it cannot prevent APK
+reverse engineering or modification.
+
+The Android launch theme leads into a branded Activity overlay. The generated Rust shell dismisses
+it after the first native CAD UI frame; it does not use a fixed splash duration. A watchdog shows a
+startup error and close action if readiness never arrives. The activation screen is designed for
+keyboard, cutout, orientation, and phone/tablet insets. Device-specific visual, touch, startup, and
+persistence behavior still requires Android emulator or device validation; no such validation is
+claimed by this inventory.
 
 ## Inventory coverage and validation checklist
 

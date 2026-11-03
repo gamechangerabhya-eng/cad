@@ -2,10 +2,23 @@
 
 ## Unreleased
 
+### Added
+- CADCraft first-install activation now runs in a blocking, keyboard-safe Android gate. It checks
+  an embedded PBKDF2-HMAC-SHA-256 verifier off the UI thread, stores only an AES-GCM-protected
+  activation record using Android Keystore, defers incoming file intents until activation, and
+  applies temporary retry delays without permanently locking out the user. This local gate deters
+  casual access but cannot prevent APK reverse engineering or modification.
+- Added a branded CADCraft startup overlay with a lightweight icon/wordmark animation. It transitions
+  on the first native CAD UI frame and presents an actionable error if readiness never arrives.
+
 ### Fixed
+- Prevented cancelled Android multitouch gestures from becoming CAD point placements or primary
+  canvas presses after a pinch/pan handoff.
+- Replaced the tall canvas zoom overlay with a compact horizontal control and corrected zoom-in,
+  zoom-out, Fit Drawing, and Zoom to Selection behavior to use the existing CAD commands.
 - Generated launchers now compile only the optional SAF picker, print, and worker APIs their app
   recipe uses, and omit the unused clipboard setter and non-WordCraft IME hide method. Bumped
-  `GENERATOR_VERSION` to 63 to regenerate existing launchers.
+  `GENERATOR_VERSION` to 64 to regenerate existing launchers.
 
 ## v37 — 2026-10-20
 

@@ -137,7 +137,7 @@ Simple wrappers that call `lib/build-common.sh` with `MODE` ("release"/"debug") 
 Main orchestrator (~4110 lines). Key responsibilities:
 - Argument parsing: `-<app>`, `-stable|-main|-latest`, `-tag=`, `-branch=`, `-appname=`, `-packagename=`, `-appicon=`, `-h`
 - Resolve app metadata: `TITLE`, `REPO` (defaults to `https://github.com/storytold/<app>.git`), special case SubCraft from `https://github.com/Aalzard/subcraft` (origin check uses `APP_ORIGIN`)
-- Constants: `BUILDER_VERSION="0.2.0"`, `UPDATE_API_URL`, `UPDATE_PAGE_URL`, `GENERATOR_VERSION="63"`
+- Constants: `BUILDER_VERSION="0.2.0"`, `UPDATE_API_URL`, `UPDATE_PAGE_URL`, `GENERATOR_VERSION="64"`
 - Locking: single build lock via `flock` on `.artcraft-build.lock` (records PID)
 - Tool checks: git, cargo, python3 with tomllib
 - SDK/JDK/NDK discovery and bootstrap

@@ -1,5 +1,7 @@
 package __PACKAGE__;
 
+import android.animation.AnimatorSet;
+import android.animation.ObjectAnimator;
 import android.Manifest;
 import android.content.ClipData;
 import android.content.ContentResolver;
@@ -8,8 +10,11 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
+import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.pdf.PdfRenderer;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
@@ -26,7 +31,14 @@ import android.print.PrintManager;
 import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import android.provider.Settings;
+import android.security.keystore.KeyGenParameterSpec;
+import android.security.keystore.KeyProperties;
+import android.text.Editable;
 import android.text.InputType;
+import android.text.TextWatcher;
+import android.text.method.HideReturnsTransformationMethod;
+import android.text.method.PasswordTransformationMethod;
+import android.util.Base64;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.DragEvent;
@@ -45,8 +57,14 @@ import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputConnectionWrapper;
 import android.view.inputmethod.InputMethodManager;
 import android.webkit.MimeTypeMap;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import android.widget.ScrollView;
+import android.widget.TextView;
 
 import com.google.androidgamesdk.GameActivity;
 
@@ -56,9 +74,15 @@ import org.json.JSONObject;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
+import java.security.KeyStore;
+import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -67,6 +91,13 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+
+import javax.crypto.Cipher;
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.PBEKeySpec;
 
 /**
  * Builder-generated {@link GameActivity} subclass that supplies Android Storage Access Framework
@@ -82,11 +113,43 @@ public final class __CLASS__ extends GameActivity {
     private static final int REQ_FOLDER = 0x5046;
     private static final int REQ_PERMISSIONS = 0x5045;
     private static final String PREFS = "__PACKAGE___saf_uri_map";
+    private static final boolean ACTIVATION_REQUIRED = __ACTIVATION_REQUIRED__;
+    private static final String ACTIVATION_PREFS = "__PACKAGE___activation_state";
+    private static final String ACTIVATION_KEY_ALIAS = "__PACKAGE__.activation.v1";
+    private static final String ACTIVATION_ALGORITHM = "PBKDF2WithHmacSHA256";
+    private static final String ACTIVATION_SALT = "__ACTIVATION_SALT__";
+    private static final String ACTIVATION_VERIFIER = "__ACTIVATION_VERIFIER__";
+    private static final int ACTIVATION_ITERATIONS = __ACTIVATION_ITERATIONS__;
+    private static final String ACTIVATION_MARKER = "__PACKAGE__:activation:v1";
+    private static final int ACTIVATION_MAX_FAILURES = 20;
+    private static final long ACTIVATION_MAX_DELAY_MS = 30_000L;
+    private static final boolean STARTUP_SPLASH_REQUIRED = __STARTUP_SPLASH_REQUIRED__;
+    private enum ActivationResult {
+        ACCEPTED,
+        REJECTED,
+        ERROR
+    }
+
     private final ConcurrentLinkedQueue<String> results = new ConcurrentLinkedQueue<>();
     private final Map<Integer, Long> requestIds = new HashMap<>();
     private final Map<Long, String> suggestedNames = new HashMap<>();
     private final Map<Long, List<String>> requestExtensions = new HashMap<>();
+    private final List<Intent> deferredIncomingIntents = new ArrayList<>();
+    private FrameLayout startupOverlay;
+    private TextView startupStatus;
+    private Button startupExitButton;
+    private boolean startupFrameReady;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
+    private FrameLayout activationOverlay;
+    private EditText activationInput;
+    private Button activationButton;
+    private Button activationVisibilityButton;
+    private ProgressBar activationProgress;
+    private TextView activationError;
+    private boolean activationInProgress;
+    private boolean activationVisible;
+    private int activationMemoryFailures;
+    private long activationMemoryRetryAt;
     private AudioManager audioManager;
     private int originalAudioMode = AudioManager.MODE_NORMAL;
     private boolean originalSpeakerphoneOn = false;
@@ -517,9 +580,14 @@ public final class __CLASS__ extends GameActivity {
         // land (see applyCaptionBarInsets).
         installCaptionBarInsets();
         suppressSelectionHandles();
+        if (STARTUP_SPLASH_REQUIRED) {
+            showStartupSplash();
+        } else {
+            ensureActivationGate();
+        }
         installDropTarget();
         imeSetup();
-        handleIncomingFiles(getIntent());
+        deferOrHandleIncomingIntent(getIntent());
     }
 
     @Override
@@ -529,7 +597,677 @@ public final class __CLASS__ extends GameActivity {
         // instead of onCreate, so stage it for the shell the same way.
         setIntent(intent);
         applyImmersiveFullscreen();
+        ensureActivationGate();
+        deferOrHandleIncomingIntent(intent);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        ensureActivationGate();
+    }
+
+    private void deferOrHandleIncomingIntent(Intent intent) {
+        if (intent == null) {
+            return;
+        }
+        if (startupOverlay != null || activationOverlay != null) {
+            deferredIncomingIntents.add(intent);
+            return;
+        }
         handleIncomingFiles(intent);
+    }
+
+    private void showStartupSplash() {
+        ViewGroup activityContent = findViewById(android.R.id.content);
+        if (activityContent == null) {
+            throw new IllegalStateException("Android startup content view is unavailable.");
+        }
+        FrameLayout overlay = new FrameLayout(this);
+        overlay.setBackgroundColor(Color.rgb(16, 24, 32));
+        overlay.setClickable(true);
+        overlay.setOnClickListener(view -> {});
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setGravity(Gravity.CENTER);
+        content.setPadding(dp(24), dp(24), dp(24), dp(24));
+
+        ImageView icon = new ImageView(this);
+        int iconId = getResources().getIdentifier("ic_launcher", "mipmap", getPackageName());
+        if (iconId != 0) {
+            icon.setImageResource(iconId);
+        }
+        icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        content.addView(icon, new LinearLayout.LayoutParams(dp(96), dp(96)));
+
+        TextView brand = activationText("AR CAD", 30, Color.WHITE, true);
+        brand.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams brandParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        brandParams.topMargin = dp(18);
+        content.addView(brand, brandParams);
+
+        TextView subtitle = activationText(
+                "Precision drafting on Android", 14, Color.rgb(167, 183, 197), false);
+        subtitle.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams subtitleParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        subtitleParams.topMargin = dp(6);
+        content.addView(subtitle, subtitleParams);
+
+        ProgressBar progress = new ProgressBar(this);
+        progress.setIndeterminate(true);
+        LinearLayout.LayoutParams progressParams = new LinearLayout.LayoutParams(dp(28), dp(28));
+        progressParams.gravity = Gravity.CENTER_HORIZONTAL;
+        progressParams.topMargin = dp(28);
+        content.addView(progress, progressParams);
+
+        startupStatus = activationText(
+                "Preparing your workspace…", 13, Color.rgb(145, 163, 178), false);
+        startupStatus.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        statusParams.topMargin = dp(12);
+        content.addView(startupStatus, statusParams);
+
+        startupExitButton = activationButton("Close", Color.rgb(42, 59, 73), Color.WHITE);
+        startupExitButton.setVisibility(View.GONE);
+        startupExitButton.setOnClickListener(view -> finish());
+        LinearLayout.LayoutParams exitParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(48));
+        exitParams.gravity = Gravity.CENTER_HORIZONTAL;
+        exitParams.topMargin = dp(20);
+        content.addView(startupExitButton, exitParams);
+
+        overlay.addView(content, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        overlay.setOnApplyWindowInsetsListener((view, insets) -> {
+            int left;
+            int top;
+            int right;
+            int bottom;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                android.graphics.Insets safe = insets.getInsets(
+                        WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                left = safe.left;
+                top = safe.top;
+                right = safe.right;
+                bottom = safe.bottom;
+            } else {
+                left = insets.getSystemWindowInsetLeft();
+                top = insets.getSystemWindowInsetTop();
+                right = insets.getSystemWindowInsetRight();
+                bottom = insets.getSystemWindowInsetBottom();
+            }
+            view.setPadding(dp(16) + left, dp(16) + top, dp(16) + right, dp(16) + bottom);
+            return insets;
+        });
+        startupOverlay = overlay;
+        activityContent.addView(overlay, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        overlay.requestApplyInsets();
+
+        AnimatorSet entrance = new AnimatorSet();
+        entrance.playTogether(
+                ObjectAnimator.ofFloat(icon, View.ALPHA, 0.0f, 1.0f),
+                ObjectAnimator.ofFloat(icon, View.SCALE_X, 0.94f, 1.0f),
+                ObjectAnimator.ofFloat(icon, View.SCALE_Y, 0.94f, 1.0f),
+                ObjectAnimator.ofFloat(brand, View.ALPHA, 0.0f, 1.0f));
+        entrance.setDuration(420L);
+        entrance.start();
+
+        // This timeout reports a failed startup only; normal dismissal is always first-frame-driven.
+        overlay.postDelayed(() -> {
+            if (startupOverlay == overlay && !startupFrameReady) {
+                startupStatus.setText("CAD workspace could not finish starting. Close and reopen the app.");
+                startupExitButton.setVisibility(View.VISIBLE);
+            }
+        }, 45_000L);
+    }
+
+    public void onNativeFirstFrameReady() {
+        runOnUiThread(() -> {
+            View decor = getWindow() != null ? getWindow().getDecorView() : null;
+            if (decor == null) {
+                return;
+            }
+            decor.postOnAnimation(() -> {
+                if (!STARTUP_SPLASH_REQUIRED || startupFrameReady) {
+                    return;
+                }
+                startupFrameReady = true;
+                ensureActivationGate();
+                dismissStartupSplash();
+                if (activationOverlay == null) {
+                    releaseDeferredIncomingIntents();
+                }
+            });
+        });
+    }
+
+    private void dismissStartupSplash() {
+        FrameLayout splash = startupOverlay;
+        if (splash == null) {
+            return;
+        }
+        startupOverlay = null;
+        splash.animate().alpha(0.0f).setDuration(220L).withEndAction(() -> {
+            if (splash.getParent() instanceof ViewGroup) {
+                ((ViewGroup) splash.getParent()).removeView(splash);
+            }
+            startupStatus = null;
+            startupExitButton = null;
+        }).start();
+    }
+
+    private void ensureActivationGate() {
+        if (STARTUP_SPLASH_REQUIRED && !startupFrameReady) {
+            return;
+        }
+        if (!ACTIVATION_REQUIRED) {
+            return;
+        }
+        if (activationStateIsValid()) {
+            if (activationOverlay != null) {
+                removeActivationGate();
+                releaseDeferredIncomingIntents();
+            }
+            return;
+        }
+        if (activationOverlay == null) {
+            showActivationGate();
+        }
+    }
+
+    private void showActivationGate() {
+        ViewGroup activityContent = findViewById(android.R.id.content);
+        if (activityContent == null) {
+            throw new IllegalStateException("Android activation content view is unavailable.");
+        }
+
+        Window window = getWindow();
+        if (window != null) {
+            window.setSoftInputMode(
+                    WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+                            | WindowManager.LayoutParams.SOFT_INPUT_STATE_UNCHANGED);
+        }
+
+        FrameLayout overlay = new FrameLayout(this);
+        overlay.setBackgroundColor(Color.rgb(13, 20, 28));
+        overlay.setClickable(true);
+        overlay.setOnClickListener(view -> {});
+        overlay.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        boolean startupTransition = STARTUP_SPLASH_REQUIRED && startupOverlay != null;
+        if (startupTransition) {
+            overlay.setAlpha(0.0f);
+        }
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setClipToPadding(false);
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setGravity(Gravity.CENTER);
+        content.setPadding(dp(8), dp(24), dp(8), dp(24));
+
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(24), dp(28), dp(24), dp(24));
+        panel.setBackground(roundedBackground(Color.rgb(25, 37, 48), dp(20)));
+        panel.setElevation(dp(12));
+        content.addView(panel, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        scroll.addView(content, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        overlay.addView(scroll, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER));
+
+        TextView brand = activationText("AR CAD", 30, Color.WHITE, true);
+        brand.setGravity(Gravity.CENTER);
+        panel.addView(brand, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        addActivationSpace(panel, dp(8));
+
+        TextView subtitle = activationText(
+                "Professional CAD workspace for Android", 14, Color.rgb(167, 183, 197), false);
+        subtitle.setGravity(Gravity.CENTER);
+        panel.addView(subtitle, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        addActivationSpace(panel, dp(28));
+
+        TextView heading = activationText("Activate this installation", 20, Color.WHITE, true);
+        panel.addView(heading, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        addActivationSpace(panel, dp(8));
+
+        TextView explanation = activationText(
+                "Enter your activation password to continue to the CAD workspace.",
+                14, Color.rgb(187, 199, 210), false);
+        panel.addView(explanation, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        addActivationSpace(panel, dp(20));
+
+        TextView passwordLabel = activationText("Activation password", 13, Color.rgb(187, 199, 210), true);
+        panel.addView(passwordLabel, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        addActivationSpace(panel, dp(8));
+
+        LinearLayout inputRow = new LinearLayout(this);
+        inputRow.setOrientation(LinearLayout.HORIZONTAL);
+        inputRow.setGravity(Gravity.CENTER_VERTICAL);
+        activationInput = new EditText(this);
+        activationInput.setSingleLine(true);
+        activationInput.setInputType(
+                InputType.TYPE_CLASS_TEXT
+                        | InputType.TYPE_TEXT_VARIATION_PASSWORD
+                        | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        activationInput.setTransformationMethod(PasswordTransformationMethod.getInstance());
+        activationInput.setTextColor(Color.WHITE);
+        activationInput.setContentDescription("Activation password");
+        activationInput.setTextSize(16);
+        activationInput.setPadding(dp(14), 0, dp(10), 0);
+        activationInput.setBackground(roundedBackground(Color.rgb(14, 22, 30), dp(10)));
+        activationInput.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        activationInput.setSaveEnabled(false);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            activationInput.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
+        }
+        inputRow.addView(activationInput, new LinearLayout.LayoutParams(
+                0, dp(54), 1.0f));
+
+        activationVisibilityButton = activationButton("Show", Color.rgb(42, 59, 73), Color.WHITE);
+        LinearLayout.LayoutParams visibilityParams = new LinearLayout.LayoutParams(dp(68), dp(54));
+        visibilityParams.leftMargin = dp(8);
+        inputRow.addView(activationVisibilityButton, visibilityParams);
+        panel.addView(inputRow, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        activationVisibilityButton.setOnClickListener(view -> toggleActivationVisibility());
+        activationInput.setOnEditorActionListener((view, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_DONE) {
+                submitActivation();
+                return true;
+            }
+            return false;
+        });
+        activationInput.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence value, int start, int count, int after) {}
+
+            @Override
+            public void onTextChanged(CharSequence value, int start, int before, int count) {
+                if (!activationInProgress) {
+                    setActivationError(null);
+                }
+            }
+
+            @Override
+            public void afterTextChanged(Editable value) {}
+        });
+
+        activationError = activationText("", 13, Color.rgb(255, 147, 135), false);
+        activationError.setVisibility(View.GONE);
+        LinearLayout.LayoutParams errorParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        errorParams.topMargin = dp(8);
+        panel.addView(activationError, errorParams);
+        addActivationSpace(panel, dp(16));
+
+        activationButton = activationButton("Activate", Color.rgb(29, 153, 206), Color.WHITE);
+        activationButton.setOnClickListener(view -> submitActivation());
+        panel.addView(activationButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(54)));
+
+        activationProgress = new ProgressBar(this);
+        activationProgress.setIndeterminate(true);
+        activationProgress.setVisibility(View.GONE);
+        LinearLayout.LayoutParams progressParams = new LinearLayout.LayoutParams(dp(32), dp(32));
+        progressParams.gravity = Gravity.CENTER_HORIZONTAL;
+        progressParams.topMargin = dp(16);
+        panel.addView(activationProgress, progressParams);
+        addActivationSpace(panel, dp(16));
+
+        TextView secureNote = activationText(
+                "Activation is stored securely on this device.", 12, Color.rgb(145, 163, 178), false);
+        secureNote.setGravity(Gravity.CENTER);
+        panel.addView(secureNote, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        activationOverlay = overlay;
+        applyActivationInsets(overlay, scroll);
+        activityContent.addView(overlay, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        overlay.requestApplyInsets();
+        if (startupTransition) {
+            overlay.animate().alpha(1.0f).setDuration(220L).start();
+        }
+    }
+
+    private void applyActivationInsets(FrameLayout overlay, ScrollView scroll) {
+        overlay.setOnApplyWindowInsetsListener((view, insets) -> {
+            int left;
+            int top;
+            int right;
+            int bottom;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                android.graphics.Insets safe = insets.getInsets(
+                        WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                android.graphics.Insets ime = insets.getInsets(WindowInsets.Type.ime());
+                left = safe.left;
+                top = safe.top;
+                right = safe.right;
+                bottom = Math.max(safe.bottom, ime.bottom);
+            } else {
+                left = insets.getSystemWindowInsetLeft();
+                top = insets.getSystemWindowInsetTop();
+                right = insets.getSystemWindowInsetRight();
+                bottom = insets.getSystemWindowInsetBottom();
+            }
+            view.setPadding(dp(16) + left, dp(16) + top, dp(16) + right, dp(16) + bottom);
+            int windowWidth = getResources().getDisplayMetrics().widthPixels;
+            int usableWidth = Math.max(dp(1), windowWidth - left - right - dp(32));
+            int panelWidth = Math.min(dp(520), usableWidth);
+            FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) scroll.getLayoutParams();
+            if (params.width != panelWidth) {
+                params.width = panelWidth;
+                scroll.setLayoutParams(params);
+            }
+            return insets;
+        });
+    }
+
+    private void submitActivation() {
+        if (activationInProgress || activationInput == null || activationButton == null) {
+            return;
+        }
+        long remaining = activationRetryDelayRemaining();
+        if (remaining > 0) {
+            setActivationError("Please wait before trying again.");
+            return;
+        }
+
+        Editable editable = activationInput.getText();
+        char[] candidate = new char[editable.length()];
+        for (int i = 0; i < editable.length(); i++) {
+            candidate[i] = editable.charAt(i);
+        }
+        activationInput.setText("");
+        if (candidate.length == 0) {
+            Arrays.fill(candidate, '\0');
+            setActivationError("Enter the activation password.");
+            return;
+        }
+        setActivationError(null);
+        setActivationBusy(true);
+
+        new Thread(() -> {
+            ActivationResult result;
+            try {
+                if (!activationPasswordMatches(candidate)) {
+                    result = ActivationResult.REJECTED;
+                } else {
+                    storeProtectedActivation();
+                    result = ActivationResult.ACCEPTED;
+                }
+            } catch (GeneralSecurityException | IOException | IllegalArgumentException error) {
+                result = ActivationResult.ERROR;
+            } finally {
+                Arrays.fill(candidate, '\0');
+            }
+            ActivationResult completed = result;
+            runOnUiThread(() -> {
+                if (activationOverlay == null) {
+                    return;
+                }
+                setActivationBusy(false);
+                if (completed == ActivationResult.ACCEPTED) {
+                    removeActivationGate();
+                    releaseDeferredIncomingIntents();
+                } else if (completed == ActivationResult.REJECTED) {
+                    boolean protectedRetry = recordActivationFailure();
+                    setActivationError(protectedRetry
+                            ? "That activation password was not accepted."
+                            : "Retry protection could not be saved. Please try again.");
+                } else {
+                    setActivationError("Activation could not be verified. Please try again.");
+                }
+            });
+        }, "ar-cad-activation").start();
+    }
+
+    private boolean activationPasswordMatches(char[] candidate) throws GeneralSecurityException {
+        byte[] salt = Base64.decode(ACTIVATION_SALT, Base64.NO_WRAP);
+        byte[] expected = null;
+        PBEKeySpec keySpec = null;
+        byte[] actual = null;
+        try {
+            expected = Base64.decode(ACTIVATION_VERIFIER, Base64.NO_WRAP);
+            keySpec = new PBEKeySpec(candidate, salt, ACTIVATION_ITERATIONS, expected.length * 8);
+            actual = SecretKeyFactory.getInstance(ACTIVATION_ALGORITHM).generateSecret(keySpec).getEncoded();
+            return actual != null && MessageDigest.isEqual(expected, actual);
+        } finally {
+            if (keySpec != null) {
+                keySpec.clearPassword();
+            }
+            Arrays.fill(salt, (byte) 0);
+            if (expected != null) {
+                Arrays.fill(expected, (byte) 0);
+            }
+            if (actual != null) {
+                Arrays.fill(actual, (byte) 0);
+            }
+        }
+    }
+
+    private long activationRetryDelayRemaining() {
+        SharedPreferences preferences = getSharedPreferences(ACTIVATION_PREFS, MODE_PRIVATE);
+        long persisted = preferences.getLong("retry_at", 0L);
+        long deadline = Math.max(persisted, activationMemoryRetryAt);
+        return Math.min(ACTIVATION_MAX_DELAY_MS, Math.max(0L, deadline - System.currentTimeMillis()));
+    }
+
+    private boolean recordActivationFailure() {
+        SharedPreferences preferences = getSharedPreferences(ACTIVATION_PREFS, MODE_PRIVATE);
+        int failures = Math.min(
+                ACTIVATION_MAX_FAILURES,
+                Math.max(preferences.getInt("failures", 0), activationMemoryFailures) + 1);
+        long delay = failures <= 3
+                ? 0L
+                : Math.min(ACTIVATION_MAX_DELAY_MS, 1_000L << Math.min(failures - 4, 5));
+        long retryAt = System.currentTimeMillis() + delay;
+        activationMemoryFailures = failures;
+        activationMemoryRetryAt = retryAt;
+        return preferences.edit().putInt("failures", failures).putLong("retry_at", retryAt).commit();
+    }
+
+    private boolean activationStateIsValid() {
+        if (!ACTIVATION_REQUIRED) {
+            return true;
+        }
+        SharedPreferences preferences = getSharedPreferences(ACTIVATION_PREFS, MODE_PRIVATE);
+        String encodedIv = preferences.getString("iv", null);
+        String encodedRecord = preferences.getString("record", null);
+        if (encodedIv == null || encodedRecord == null) {
+            return false;
+        }
+        byte[] iv = null;
+        byte[] record = null;
+        byte[] plaintext = null;
+        try {
+            iv = Base64.decode(encodedIv, Base64.NO_WRAP);
+            record = Base64.decode(encodedRecord, Base64.NO_WRAP);
+            if (iv.length != 12) {
+                return false;
+            }
+            SecretKey key = activationKey(false);
+            if (key == null) {
+                return false;
+            }
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(128, iv));
+            plaintext = cipher.doFinal(record);
+            return MessageDigest.isEqual(
+                    ACTIVATION_MARKER.getBytes(StandardCharsets.UTF_8), plaintext);
+        } catch (GeneralSecurityException | IOException | IllegalArgumentException error) {
+            return false;
+        } finally {
+            if (iv != null) {
+                Arrays.fill(iv, (byte) 0);
+            }
+            if (record != null) {
+                Arrays.fill(record, (byte) 0);
+            }
+            if (plaintext != null) {
+                Arrays.fill(plaintext, (byte) 0);
+            }
+        }
+    }
+
+    private SecretKey activationKey(boolean create) throws GeneralSecurityException, IOException {
+        KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
+        keyStore.load(null);
+        java.security.Key existing = keyStore.getKey(ACTIVATION_KEY_ALIAS, null);
+        if (existing instanceof SecretKey) {
+            return (SecretKey) existing;
+        }
+        if (!create) {
+            return null;
+        }
+        if (existing != null) {
+            throw new GeneralSecurityException("Activation key has an unexpected type.");
+        }
+        KeyGenerator generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
+        generator.init(new KeyGenParameterSpec.Builder(
+                ACTIVATION_KEY_ALIAS, KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setRandomizedEncryptionRequired(true)
+                .build());
+        return generator.generateKey();
+    }
+
+    private void storeProtectedActivation() throws GeneralSecurityException, IOException {
+        SecretKey key = activationKey(true);
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.ENCRYPT_MODE, key);
+        byte[] marker = ACTIVATION_MARKER.getBytes(StandardCharsets.UTF_8);
+        byte[] record = null;
+        try {
+            record = cipher.doFinal(marker);
+            SharedPreferences.Editor editor = getSharedPreferences(ACTIVATION_PREFS, MODE_PRIVATE).edit()
+                    .putString("iv", Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP))
+                    .putString("record", Base64.encodeToString(record, Base64.NO_WRAP))
+                    .remove("failures")
+                    .remove("retry_at");
+            if (!editor.commit()) {
+                throw new IOException("Protected activation state could not be saved.");
+            }
+            activationMemoryFailures = 0;
+            activationMemoryRetryAt = 0L;
+        } finally {
+            Arrays.fill(marker, (byte) 0);
+            if (record != null) {
+                Arrays.fill(record, (byte) 0);
+            }
+        }
+    }
+
+    private void releaseDeferredIncomingIntents() {
+        for (Intent intent : deferredIncomingIntents) {
+            handleIncomingFiles(intent);
+        }
+        deferredIncomingIntents.clear();
+    }
+
+    private void removeActivationGate() {
+        if (activationInput != null) {
+            InputMethodManager inputMethodManager =
+                    (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (inputMethodManager != null) {
+                inputMethodManager.hideSoftInputFromWindow(activationInput.getWindowToken(), 0);
+            }
+        }
+        if (activationOverlay != null && activationOverlay.getParent() instanceof ViewGroup) {
+            ((ViewGroup) activationOverlay.getParent()).removeView(activationOverlay);
+        }
+        activationOverlay = null;
+        activationInput = null;
+        activationButton = null;
+        activationVisibilityButton = null;
+        activationProgress = null;
+        activationError = null;
+        activationInProgress = false;
+        activationVisible = false;
+        Window window = getWindow();
+        if (window != null) {
+            window.setSoftInputMode(
+                    WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+                            | WindowManager.LayoutParams.SOFT_INPUT_STATE_UNCHANGED);
+        }
+        applyImmersiveFullscreen();
+    }
+
+    private void setActivationBusy(boolean busy) {
+        activationInProgress = busy;
+        activationButton.setEnabled(!busy);
+        activationInput.setEnabled(!busy);
+        activationVisibilityButton.setEnabled(!busy);
+        activationProgress.setVisibility(busy ? View.VISIBLE : View.GONE);
+    }
+
+    private void setActivationError(String message) {
+        if (activationError == null) {
+            return;
+        }
+        activationError.setText(message == null ? "" : message);
+        activationError.setVisibility(message == null ? View.GONE : View.VISIBLE);
+    }
+
+    private void toggleActivationVisibility() {
+        activationVisible = !activationVisible;
+        activationInput.setTransformationMethod(activationVisible
+                ? HideReturnsTransformationMethod.getInstance()
+                : PasswordTransformationMethod.getInstance());
+        activationInput.setSelection(activationInput.getText().length());
+        activationVisibilityButton.setText(activationVisible ? "Hide" : "Show");
+    }
+
+    private TextView activationText(String value, int sizeSp, int color, boolean bold) {
+        TextView text = new TextView(this);
+        text.setText(value);
+        text.setTextSize(sizeSp);
+        text.setTextColor(color);
+        if (bold) {
+            text.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        }
+        return text;
+    }
+
+    private Button activationButton(String label, int backgroundColor, int textColor) {
+        Button button = new Button(this);
+        button.setText(label);
+        button.setTextSize(15);
+        button.setTextColor(textColor);
+        button.setAllCaps(false);
+        button.setMinHeight(dp(48));
+        button.setBackground(roundedBackground(backgroundColor, dp(10)));
+        return button;
+    }
+
+    private GradientDrawable roundedBackground(int color, int radius) {
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(color);
+        background.setCornerRadius(radius);
+        return background;
+    }
+
+    private void addActivationSpace(LinearLayout parent, int height) {
+        parent.addView(new View(this), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, height));
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     /**

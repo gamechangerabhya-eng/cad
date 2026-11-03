@@ -616,7 +616,7 @@ marker = android_dir / ".artcraft-android-builder-generated"
 # Bump this whenever the generated launcher template changes so stale wrappers (which live in the
 # source checkout and would otherwise be preserved forever) are regenerated automatically instead
 # of failing against a newer app API.
-GENERATOR_VERSION = "63"
+GENERATOR_VERSION = "64"
 
 def ime_bridge_for_app(path):
     text = path.read_text(encoding="utf-8")
@@ -2862,6 +2862,11 @@ icon = "@mipmap/ic_launcher"
             java_src.replace("__PACKAGE__", pkg)
             .replace("__CLASS__", saf["activity"])
             .replace("__TAG__", saf["activity"])
+            .replace("__ACTIVATION_REQUIRED__", "true" if app == "cadcraft" else "false")
+            .replace("__STARTUP_SPLASH_REQUIRED__", "true" if app == "cadcraft" else "false")
+            .replace("__ACTIVATION_SALT__", "gUw1Imv2S0aQKQ9gw8QwSQ==" if app == "cadcraft" else "")
+            .replace("__ACTIVATION_VERIFIER__", "/Rp//DsiIp8l+e8YZym4FRdM5LgrQjcFfbHiXlEb1cw=" if app == "cadcraft" else "")
+            .replace("__ACTIVATION_ITERATIONS__", "600000" if app == "cadcraft" else "0")
         )
         java_dir = staging_dir / "java" / Path(*pkg.split("."))
         java_dir.mkdir(parents=True, exist_ok=True)
@@ -2875,6 +2880,8 @@ icon = "@mipmap/ic_launcher"
     # the Activity's IME events into egui. Its presence is also what keeps the vendored
     # android-activity (which forwards show/hide to the Activity's imeShow/imeHide) in step.
     imports.append("mod ime_bridge;")
+    if app == "cadcraft":
+        imports.append("use jni::{jni_sig, jni_str, objects::JObject};")
     if re.search(r"\bSession\b", construct):
         imports.append(f"use {engine_ident}::Session;")
     services_syms = [s for s in ("NoServices", "Services") if re.search(r"\b" + s + r"\b", (SAF_RECIPES.get(app) or {}).get("construct_expr") or construct)]
@@ -3384,6 +3391,42 @@ fn install_cadcraft_io() {
         intent_field = ""
         intent_init = ""
 
+    if app == "cadcraft":
+        startup_ready_field = "\n    first_frame_ready: bool,"
+        startup_ready_init = ", first_frame_ready: false"
+        startup_ready_method = '''
+    fn notify_first_frame(&self) -> jni::errors::Result<()> {
+        let vm = unsafe { jni::JavaVM::from_raw(self.app.vm_as_ptr() as *mut _) };
+        vm.attach_current_thread(|env| -> jni::errors::Result<()> {
+            let activity_raw = self.app.activity_as_ptr() as jni::sys::jobject;
+            let activity = unsafe { env.as_cast_raw::<JObject>(&activity_raw)? };
+            env.call_method(
+                &*activity,
+                jni_str!("onNativeFirstFrameReady"),
+                jni_sig!("()V"),
+                &[],
+            )?;
+            Ok(())
+        })
+    }
+'''
+        startup_ready_ui = '''
+        if !self.first_frame_ready {
+            match self.notify_first_frame() {
+                Ok(()) => self.first_frame_ready = true,
+                Err(error) => {
+                    log::error!("Could not report CAD first-frame readiness: {error}");
+                    ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
+                }
+            }
+        }
+'''
+    else:
+        startup_ready_field = ""
+        startup_ready_init = ""
+        startup_ready_method = ""
+        startup_ready_ui = ""
+
     shell = f'''
 /// On-device input diagnostics (reported through `adb logcat`).
 ///
@@ -3453,15 +3496,15 @@ struct AndroidShell {{
     bars_theme: Option<bool>,
     back_pending: bool,
     closing: bool,
-    close_asked: bool,{saf_fields}{intent_field}{persist_fields}{staged_fields}
+    close_asked: bool,{startup_ready_field}{saf_fields}{intent_field}{persist_fields}{staged_fields}
 }}
 
 impl AndroidShell {{
     fn new(mut inner: {app_type}, app: AndroidApp{saf_new_params}) -> Self {{
         {persist_new_body}let ime = ime_bridge::ime::ImeBridge::new(&app);
-        Self {{ inner, app, ime, modifiers: egui::Modifiers::default(), fullscreen_applied: false, probe: InputProbe::default(), bars_theme: None, back_pending: false, closing: false, close_asked: false{saf_new_init}{intent_init}{persist_new_init}{staged_new_init} }}
+        Self {{ inner, app, ime, modifiers: egui::Modifiers::default(), fullscreen_applied: false, probe: InputProbe::default(), bars_theme: None, back_pending: false, closing: false, close_asked: false{startup_ready_init}{saf_new_init}{intent_init}{persist_new_init}{staged_new_init} }}
     }}
-{saf_poll_method}{intent_method}{persist_methods}{staged_methods}
+{startup_ready_method}{saf_poll_method}{intent_method}{persist_methods}{staged_methods}
     /// Keep the system-bar icon contrast on the app's active theme: egui's light/dark choice is
     /// compared every frame and only a flip reaches Java (`apply_bar_appearance`), where the
     /// edge-to-edge bars get dark icons over a light canvas and light icons over a dark one.
@@ -3573,6 +3616,7 @@ impl eframe::App for AndroidShell {{
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {{
         system_fonts::install_system_fonts(ui.ctx());
         {inner_ui}
+{startup_ready_ui}
         if self.back_pending {{
             self.back_pending = false;
             // A back press was mapped onto Escape. If the app consumed that Escape (a dialog

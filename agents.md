@@ -116,7 +116,7 @@ The system uses a hybrid approach:
 BUILDER_VERSION="0.2.0"
 UPDATE_API_URL="https://api.github.com/repos/MostafaXS1/artcraft-android/releases/latest"
 UPDATE_PAGE_URL="https://github.com/MostafaXS1/artcraft-android/releases/latest"
-GENERATOR_VERSION="63"  # Bumped when generated launcher template changes
+GENERATOR_VERSION="64" # Bumped when generated launcher template changes
 ```
 
 **Repository mappings:**
@@ -1864,7 +1864,7 @@ bash build.sh -app
 ## 51. Version History & Changelog Notes
 
 ### 51.1 Generator Version
-`GENERATOR_VERSION = "63"` in lib/build-common.sh
+`GENERATOR_VERSION = "64"` in lib/build-common.sh
 Bump when launcher template changes significantly.
 
 ### 51.2 Builder Version

@@ -8,6 +8,8 @@ palettes=(root/'source/cadcraft/crates/ui-egui/src/palettes.rs').read_text()
 cmdline=(root/'source/cadcraft/crates/ui-egui/src/cmdline.rs').read_text()
 canvas=(root/'source/cadcraft/crates/ui-egui/src/canvas.rs').read_text()
 scrolling=(root/'lib/scrolling.sh').read_text()
+mobile=(root/'templates/android/cadcraft_mobile_ui.rs').read_text()
+app_bar=mobile.split('fn show_app_bar',1)[1].split('fn show_selection_bar',1)[0]
 checks=[]
 def check(label, ok): checks.append((label,bool(ok)))
 # Step 4 — touch drafting/navigation
@@ -24,10 +26,15 @@ check('Android two-finger pixel scrolls are patched to pan, not mouse-wheel zoom
 check('CADCraft reads Android touch-up position from egui Touch::End events', 'egui::Event::Touch { phase: egui::TouchPhase::End, pos, .. } => Some(*pos)' in scrolling and 'hover_pos: i.pointer.hover_pos().or(touch_end_pos)' in scrolling)
 check('CADCraft canvas hit-testing recognizes a released touch location', 'nav.response.hovered() || touch_end_inside' in scrolling)
 check('CADCraft point prompts accept a paired Android touch-up release', 'touch_end_primary_release: touch_end_pos.is_some()' in scrolling and 'point_prompt && context.touch_end_primary_release' in scrolling)
+check('Cancelled Android multitouch suppresses later point and selection presses', 'egui::TouchPhase::Cancel' in scrolling and 'suppress_android_touch_until_next_start' in scrolling and 'pressed_primary: i.pointer.primary_clicked()' in scrolling and '!context.suppress_touch' in scrolling)
 check('Android keeps the desktop menu hidden but lets the left Tool Sets rail reopen the panel', 'hide the desktop menu bar on Android' in scrolling and 'allow the left Tool Sets rail to reopen the panel' in scrolling and 'app.ui.show_toolsets)?;' in scrolling)
 check('Android Tool Sets is available in both the touch toolbar and left rail', '("Tool Sets", "ui.toggle.toolsets")' in scrolling and '48.0 } else { 22.0' in scrolling and 'app.run("ui.toggle.toolsets", json!({"on": true}))' in palettes)
 check('Tool Sets open failures are echoed to command history', 'app.session.echo(error);' in scrolling and 'report Tool Sets open errors' in scrolling)
 check('CADCraft Android provides explicit touch zoom in/out controls', '(\"Zoom -\", 0.8), (\"Zoom +\", 1.25)' in scrolling and 'add touch zoom controls' in scrolling)
+check('Mobile canvas zoom controls are compact and have correct zoom direction', 'action_button(ui, \"−\", \"Zoom out\", t, true, || zoom(app, 0.8));' in mobile and 'action_button(ui, \"+\", \"Zoom in\", t, true, || zoom(app, 1.25));' in mobile and 'action_button(ui, \"Fit\", \"Fit drawing\", t, true, || app.start(\"zoom.extents\"));' in mobile)
+check('Selected drawings expose existing Zoom Object command', 'app.run(\"zoom.object\", Value::Null)' in mobile and 'if selected_count > 0' in mobile)
+check('Line touch input continues through the existing command and point-prompt pipeline', '\"line\"' in mobile and 'app.start(id);' in mobile and 'point_prompt && context.touch_end_primary_release' in scrolling)
+check('Persistent app bar layout remains fixed independently of active prompts', 'exact_size(APP_BAR_HEIGHT)' in app_bar and 'current_prompt' not in app_bar)
 check('Android drafting toolbar buttons are patched to 48-point touch targets', 'ANDROID_DRAFTING_BUTTON: [f32; 2] = [84.0, 48.0]' in scrolling and 'ANDROID_DRAFTING_BAR_HEIGHT: f32 = 212.0' in scrolling)
 check('Android status and zoom buttons use 48-point touch targets', 'exact_size(56.0)' in scrolling and '[72.0, 48.0]' in scrolling and '[84.0, 48.0]' in scrolling)
 # Step 5 — mobile layer/property controls
