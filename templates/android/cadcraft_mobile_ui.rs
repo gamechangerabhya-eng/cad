@@ -509,7 +509,7 @@ fn command_button(ui: &mut egui::Ui, app: &mut CadApp, command: &Value, t: Token
         egui::Button::new(RichText::new(caption).size(CONTROL_TEXT_SIZE).color(t.text)).min_size(vec2(button_width, TOOL_HIT_TARGET.y)),
     );
     let response = response.on_hover_text(crate::i18n::t(label));
-    crate::control::record_widget(ui, &response, crate::i18n::t(label), "button", shortcut);
+    crate::control::record_widget(ui, &response, crate::i18n::t(label), "button", None);
     let response = if enabled { response } else { response.on_disabled_hover_text(crate::i18n::t(reason)) };
     if response.clicked() {
         app.start(id);
