@@ -100,3 +100,11 @@ missing script is not an error (the device simply ships no font for it):
 
     adb logcat | grep -E 'system fallback font|no system font found'
 
+## CADCraft Android workspace
+
+CADCraft's Android chrome is supplied by the builder-owned
+`templates/android/cadcraft_mobile_ui.rs` template. `lib/cadcraft-mobile-ui.sh` installs it into
+the upstream UI crate during an Android build and routes only the Android window chrome through
+it. The existing canvas, panels, dialogs, command registry, document APIs, and engine remain in
+use. The command browser reads `cadcraft_engine::command_specs()` through the existing UI command
+catalog, so adding an engine command does not require adding a second Android command registry.

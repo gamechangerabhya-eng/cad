@@ -588,6 +588,7 @@ fi
 # app's own source at build time; the scroll synthesis itself is the vendored winit/egui-winit
 # backends above.
 bash "$ROOT/lib/scrolling.sh" "$SRC" "$APP" "$TITLE"
+bash "$ROOT/lib/cadcraft-mobile-ui.sh" "$SRC" "$APP"
 
 # SubCraft's Android file hand-off (a public `files::deliver_android`) is applied by its own script,
 # so it can be turned off for testing by commenting out the line below. It patches the app's own
