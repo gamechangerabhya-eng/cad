@@ -1,7 +1,5 @@
 Act as a senior Android product designer, professional CAD UX architect, Rust/egui developer, touch-input engineer, Android security engineer, QA engineer, Git specialist, and GitHub Actions build engineer.
-
  
-
 ==================================================
 PRIMARY MISSION
 ==================================================

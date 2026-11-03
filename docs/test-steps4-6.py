@@ -24,6 +24,7 @@ check('Android pinch recognition has a short deadzone and avoids pan-to-pinch mi
 check('Canvas pan remains supported', 'handle_button_navigation(app, nav, inside)' in canvas)
 check('Android two-finger pixel scrolls are patched to pan, not mouse-wheel zoom', 'cfg!(any(target_os = \"macos\", target_os = \"android\"))' in scrolling and 'Android two-finger slides pan instead of zoom' in scrolling)
 check('CADCraft reads Android touch-up position from egui Touch::End events', 'egui::Event::Touch { phase: egui::TouchPhase::End, pos, .. } => Some(*pos)' in scrolling and 'hover_pos: i.pointer.hover_pos().or(touch_end_pos)' in scrolling)
+check('CADCraft touch patch accepts the upstream unfiltered pointer initializer', 'old_unfiltered_primary = old.replace(' in scrolling and 'pressed_primary: i.pointer.primary_clicked(),' in scrolling)
 check('CADCraft canvas hit-testing recognizes a released touch location', 'nav.response.hovered() || touch_end_inside' in scrolling)
 check('CADCraft point prompts accept a paired Android touch-up release', 'touch_end_primary_release: touch_end_pos.is_some()' in scrolling and 'point_prompt && context.touch_end_primary_release' in scrolling)
 check('Cancelled Android multitouch suppresses later point and selection presses', 'egui::TouchPhase::Cancel' in scrolling and 'suppress_android_touch_until_next_start' in scrolling and 'pressed_primary: i.pointer.primary_clicked()' in scrolling and '!context.suppress_touch' in scrolling)

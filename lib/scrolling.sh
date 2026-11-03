@@ -523,14 +523,20 @@ elif app == "cadcraft":
         "            scroll: i.smooth_scroll_delta,\n"
         "            mods: i.modifiers,\n"
         "            middle_down: i.pointer.middle_down(),\n"
-        "            pressed_primary: i.pointer.primary_clicked(),\n"
+        "            pressed_primary: i.pointer.primary_clicked()\n"
+        "                && !app.canvas.suppress_android_touch_until_next_start,\n"
         "            pressed_secondary: i.pointer.secondary_clicked(),\n"
         "            dbl_middle: i.pointer.button_double_clicked(egui::PointerButton::Middle),\n"
         "            dbl_primary: i.pointer.button_double_clicked(egui::PointerButton::Primary),\n"
         "        }\n"
         "    });\n"
     )
-    if fix(path, old, new):
+    old_unfiltered_primary = old.replace(
+        "        pressed_primary: i.pointer.primary_clicked()\n"
+        "            && !app.canvas.suppress_android_touch_until_next_start,\n",
+        "        pressed_primary: i.pointer.primary_clicked(),\n",
+    )
+    if fix(path, old, new) or fix(path, old_unfiltered_primary, new):
         fixed.append("crates/ui-egui/src/canvas.rs (read final Android touch position)")
     elif new not in (src / path).read_text():
         raise RuntimeError("Unexpected CADCraft pointer construction; refusing to omit Android touch-up position.")
