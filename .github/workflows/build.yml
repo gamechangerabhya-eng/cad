@@ -105,6 +105,9 @@ jobs:
       - name: Apply guarded CADCraft compile compatibility fixes
         run: python tools/patch-cadcraft-compile.py source/cadcraft
 
+      - name: Install builder-owned CADCraft mobile UI
+        run: bash lib/cadcraft-mobile-ui.sh source/cadcraft cadcraft
+
       - name: Install CJK font for UI regression tests
         run: |
           sudo apt-get update

@@ -2924,6 +2924,14 @@ icon = "@mipmap/ic_launcher"
         else:
             inner_hook = "let _ = (ctx, raw);"
 
+    numeric_input_hook = ""
+    if app == "cadcraft":
+        numeric_input_hook = (
+            "        let numeric_prompt = self.inner.session.current_prompt().is_some_and("
+            "|prompt| prompt.accept.number && !prompt.accept.point && !prompt.accept.text);\n"
+            "        self.ime.set_numeric_input(numeric_prompt);\n"
+        )
+
     # The Android back button asks the app before it leaves, so an app with unsaved work opens
     # its own "quit without saving?" prompt instead of the app disappearing. The check is the
     # desktop's own (`close_requested`), and the flag the app sets once the user answered it
@@ -3584,7 +3592,8 @@ impl eframe::App for AndroidShell {{
 
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {{
         self.probe.observe(raw);
-        self.ime.poll(raw);
+        self.ime.apply_safe_area(ctx, raw);
+{numeric_input_hook}        self.ime.poll(raw);
         self.refresh_fullscreen(raw);
         apply_android_modifiers(&mut self.modifiers, raw);
         self.map_android_back(raw);

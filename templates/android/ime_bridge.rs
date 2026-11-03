@@ -13,7 +13,7 @@ pub mod ime {
     use android_activity::AndroidApp;
     use jni::{
         JavaVM, jni_sig, jni_str,
-        objects::{JObject, JString},
+        objects::{JObject, JString, JValue},
     };
     use std::sync::Arc;
 
@@ -24,6 +24,8 @@ pub mod ime {
     pub struct ImeBridge {
         app: AndroidApp,
         vm: Arc<JavaVM>,
+        safe_area_supported: Option<bool>,
+        numeric_input: Option<bool>,
         /// Set once the Activity reports it has no `imePoll` (an Activity that never adopted the IME
         /// host view), so the per-frame poll stops paying for a call that can only fail.
         unsupported: bool,
@@ -33,10 +35,55 @@ pub mod ime {
         pub fn new(app: &AndroidApp) -> Self {
             // SAFETY: AndroidApp owns the live VM pointer for the lifetime of the activity.
             let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr() as *mut _) };
-            Self {
-                app: app.clone(),
-                vm: Arc::new(vm),
-                unsupported: false,
+            Self { app: app.clone(), vm: Arc::new(vm), safe_area_supported: None, numeric_input: None, unsupported: false }
+        }
+
+        /// Apply the Activity's system-bar, cutout and keyboard insets to egui's mobile safe area.
+        pub fn apply_safe_area(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+            if self.safe_area_supported == Some(false) {
+                return;
+            }
+
+            match self.read_safe_area_insets() {
+                Ok(insets) => {
+                    self.safe_area_supported = Some(true);
+                    let pixels_per_point = ctx.pixels_per_point().max(0.1);
+                    raw.safe_area_insets = Some(egui::SafeAreaInsets(egui::MarginF32 {
+                        left: insets[0] as f32 / pixels_per_point,
+                        top: insets[1] as f32 / pixels_per_point,
+                        right: insets[2] as f32 / pixels_per_point,
+                        bottom: insets[3] as f32 / pixels_per_point,
+                    }));
+                }
+                Err(error) => {
+                    log::warn!("Android safe-area insets unavailable: {error}");
+                    self.safe_area_supported = Some(false);
+                }
+            }
+        }
+
+        /// Select the Android numeric keyboard only for prompts that accept a scalar number.
+        pub fn set_numeric_input(&mut self, numeric: bool) {
+            if self.numeric_input == Some(numeric) {
+                return;
+            }
+            let result = self.vm.attach_current_thread(|env| -> jni::errors::Result<()> {
+                let activity_raw = self.app.activity_as_ptr() as jni::sys::jobject;
+                let activity = unsafe { env.as_cast_raw::<JObject>(&activity_raw)? };
+                match env.call_method(&*activity, jni_str!("imeSetNumeric"), jni_sig!("(Z)V"), &[JValue::Bool(numeric)]) {
+                    Ok(_) => Ok(()),
+                    Err(error) => {
+                        env.exception_clear();
+                        Err(error)
+                    }
+                }
+            });
+            match result {
+                Ok(()) => self.numeric_input = Some(numeric),
+                Err(error) => {
+                    log::warn!("Could not update Android numeric keyboard mode: {error}");
+                    self.numeric_input = Some(numeric);
+                }
             }
         }
 
@@ -71,12 +118,7 @@ pub mod ime {
                 .attach_current_thread(|env| -> jni::errors::Result<()> {
                     let activity_raw = self.app.activity_as_ptr() as jni::sys::jobject;
                     let activity = unsafe { env.as_cast_raw::<JObject>(&activity_raw)? };
-                    match env.call_method(
-                        &*activity,
-                        jni_str!("imeHide"),
-                        jni_sig!("()V"),
-                        &[],
-                    ) {
+                    match env.call_method(&*activity, jni_str!("imeHide"), jni_sig!("()V"), &[]) {
                         Ok(_) => Ok(()),
                         Err(error) => {
                             env.exception_clear();
@@ -87,6 +129,38 @@ pub mod ime {
                 .map_err(|error| error.to_string())
         }
         // ARTCRAFT_WORDCRAFT_HIDE_IME_END
+
+        fn read_safe_area_insets(&self) -> Result<[i32; 4], String> {
+            let value = self
+                .vm
+                .attach_current_thread(|env| -> jni::errors::Result<Option<String>> {
+                    let activity_raw = self.app.activity_as_ptr() as jni::sys::jobject;
+                    let activity = unsafe { env.as_cast_raw::<JObject>(&activity_raw)? };
+                    let value = match env.call_method(&*activity, jni_str!("imeInsets"), jni_sig!("()Ljava/lang/String;"), &[]) {
+                        Ok(value) => value.l()?,
+                        Err(error) => {
+                            env.exception_clear();
+                            return Err(error);
+                        }
+                    };
+                    if value.is_null() {
+                        return Ok(None);
+                    }
+                    let value = JString::cast_local(env, value)?;
+                    let value: String = value.try_to_string(env)?;
+                    Ok(Some(value))
+                })
+                .map_err(|error| error.to_string())?
+                .ok_or_else(|| "Activity returned null safe-area insets".to_owned())?;
+
+            let fields: Vec<i32> =
+                value.split(',').map(|field| field.trim().parse::<i32>().map_err(|error| error.to_string())).collect::<Result<_, _>>()?;
+            let insets: [i32; 4] = fields.try_into().map_err(|_| "Activity returned an invalid safe-area inset count".to_owned())?;
+            if insets.iter().any(|inset| *inset < 0) {
+                return Err("Activity returned a negative safe-area inset".to_owned());
+            }
+            Ok(insets)
+        }
 
         fn next_event(&self) -> Result<Option<String>, String> {
             self.vm
@@ -100,12 +174,7 @@ pub mod ime {
                     // caller to handle, and this thread is shared with the SAF bridge, so clear it
                     // before reporting the missing method (otherwise the next unrelated JNI call sees
                     // a stale pending exception).
-                    let value = match env.call_method(
-                        &*activity,
-                        jni_str!("imePoll"),
-                        jni_sig!("()Ljava/lang/String;"),
-                        &[],
-                    ) {
+                    let value = match env.call_method(&*activity, jni_str!("imePoll"), jni_sig!("()Ljava/lang/String;"), &[]) {
                         Ok(value) => value.l()?,
                         Err(error) => {
                             env.exception_clear();
@@ -126,13 +195,7 @@ pub mod ime {
     /// A synthetic Enter press. Both the IME's action key (`a`) and its Enter/newline key (`c` with a
     /// bare newline) become this, so egui decides what Enter means for the focused field.
     fn enter_key() -> egui::Event {
-        egui::Event::Key {
-            key: egui::Key::Enter,
-            physical_key: None,
-            pressed: true,
-            repeat: false,
-            modifiers: egui::Modifiers::default(),
-        }
+        egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::default() }
     }
 
     /// Decode one queued event. The first character tags it and the rest is the payload:
@@ -151,22 +214,13 @@ pub mod ime {
                 }
                 Some(egui::Event::Ime(egui::ImeEvent::Commit(payload.to_owned())))
             }
-            'p' => Some(egui::Event::Ime(egui::ImeEvent::Preedit {
-                text: payload.to_owned(),
-                active_range_chars: None,
-            })),
-            'f' => Some(egui::Event::Ime(egui::ImeEvent::Preedit {
-                text: String::new(),
-                active_range_chars: None,
-            })),
+            'p' => Some(egui::Event::Ime(egui::ImeEvent::Preedit { text: payload.to_owned(), active_range_chars: None })),
+            'f' => Some(egui::Event::Ime(egui::ImeEvent::Preedit { text: String::new(), active_range_chars: None })),
             'd' => {
                 let (before, after) = payload.split_once(',')?;
                 let before_chars = before.trim().parse().ok()?;
                 let after_chars = after.trim().parse().ok()?;
-                Some(egui::Event::Ime(egui::ImeEvent::DeleteSurrounding {
-                    before_chars,
-                    after_chars,
-                }))
+                Some(egui::Event::Ime(egui::ImeEvent::DeleteSurrounding { before_chars, after_chars }))
             }
             'a' => {
                 let action: i32 = payload.trim().parse().ok()?;

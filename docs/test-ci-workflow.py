@@ -3,6 +3,9 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 workflow = (root / ".github/workflows/build.yml").read_text()
+mobile_ui_install = workflow.find("name: Install builder-owned CADCraft mobile UI")
+workspace_check = workflow.find("name: Compile the complete CADCraft workspace")
+rust_regression = workflow.find("name: Run source and Rust regression gate")
 checks = {
     "version tags select release builds": "startsWith(github.ref, 'refs/tags/v') && 'release'" in workflow,
     "manual workflow mode remains selectable": "options: [debug, release]" in workflow,
@@ -17,6 +20,7 @@ checks = {
     "release private-key entry and expected alias are validated": 'keytool -list -v -keystore keys/artcraft-builder.jks' in workflow and '-alias artcraftbuilder' in workflow and 'Entry type: PrivateKeyEntry' in workflow,
     "Rust build cache is keyed to the lockfile": "actions/cache@v6" in workflow and "hashFiles('source/cadcraft/Cargo.lock')" in workflow,
     "Rust check and APK build share one target directory": 'CARGO_TARGET_DIR: ${{ github.workspace }}/build/cadcraft/target' in workflow,
+    "mobile UI template is installed before compile and Rust tests": 0 <= mobile_ui_install < workspace_check < rust_regression,
 }
 for label, ok in checks.items():
     print(("PASS" if ok else "FAIL") + " - " + label)

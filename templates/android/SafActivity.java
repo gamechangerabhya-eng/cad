@@ -113,6 +113,7 @@ public final class __CLASS__ extends GameActivity {
     // egui IME events.
     private final ConcurrentLinkedQueue<String> imeEvents = new ConcurrentLinkedQueue<>();
     private EditText imeView;
+    private boolean imeNumeric;
     // True between imeShow() and imeHide(); suppresses a deferred show that a quick hide overtook.
     private volatile boolean imeWanted = false;
     // Some IMEs report one backspace press twice, through two different calls:
@@ -785,6 +786,76 @@ public final class __CLASS__ extends GameActivity {
                 Log.w(TAG, "Could not hide the soft keyboard", error);
             }
         });
+    }
+
+    /** Use the compact signed-decimal keyboard for numeric command prompts. */
+    public void imeSetNumeric(boolean numeric) {
+        final EditText view = imeView;
+        if (view == null || imeNumeric == numeric) {
+            return;
+        }
+        imeNumeric = numeric;
+        runOnUiThread(() -> {
+            if (view != imeView) {
+                return;
+            }
+            int inputType = numeric
+                    ? InputType.TYPE_CLASS_NUMBER
+                            | InputType.TYPE_NUMBER_FLAG_DECIMAL
+                            | InputType.TYPE_NUMBER_FLAG_SIGNED
+                    : InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
+            view.setInputType(inputType);
+            view.setImeOptions(
+                    (numeric ? EditorInfo.IME_ACTION_DONE : 0) | EditorInfo.IME_FLAG_NO_FULLSCREEN);
+            if (imeWanted) {
+                InputMethodManager imm =
+                        (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                if (imm != null) {
+                    imm.restartInput(view);
+                }
+            }
+        });
+    }
+
+    /** Return safe-area insets in physical pixels, including the IME when it is visible. */
+    public String imeInsets() {
+        Window window = getWindow();
+        if (window == null) {
+            return "0,0,0,0";
+        }
+        View decor = window.getDecorView();
+        WindowInsets insets = decor.getRootWindowInsets();
+        if (insets == null) {
+            return "0,0,0,0";
+        }
+
+        int left;
+        int top;
+        int right;
+        int bottom;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            android.graphics.Insets system = insets.getInsets(
+                    WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+            android.graphics.Insets ime = insets.getInsets(WindowInsets.Type.ime());
+            left = system.left;
+            top = system.top;
+            right = system.right;
+            bottom = Math.max(system.bottom, ime.bottom);
+        } else {
+            left = insets.getSystemWindowInsetLeft();
+            top = insets.getSystemWindowInsetTop();
+            right = insets.getSystemWindowInsetRight();
+            bottom = insets.getSystemWindowInsetBottom();
+
+            Rect visibleFrame = new Rect();
+            decor.getWindowVisibleDisplayFrame(visibleFrame);
+            int rootHeight = decor.getRootView().getHeight();
+            int keyboardInset = Math.max(0, rootHeight - visibleFrame.bottom);
+            if (rootHeight > 0 && keyboardInset > rootHeight / 5) {
+                bottom = Math.max(bottom, keyboardInset);
+            }
+        }
+        return left + "," + top + "," + right + "," + bottom;
     }
 
     /**
