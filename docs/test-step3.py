@@ -8,6 +8,7 @@ chrome = (root / "source/cadcraft/crates/ui-egui/src/chrome.rs").read_text()
 scrolling = (root / "lib/scrolling.sh").read_text()
 menus = (root / "source/cadcraft/crates/ui-egui/src/menus.rs").read_text()
 engine = root / "source/cadcraft/crates/engine/src/cmd"
+mobile = (root / "templates/android/cadcraft_mobile_ui.rs").read_text(encoding="utf-8")
 checks = []
 
 def check(name, condition):
@@ -21,6 +22,9 @@ check("Android toolbar is only shown while a drawing is open", "if !app.ui.start
 check("Toolbar commands dispatch through CadApp command router", "app.start(command)" in chrome)
 check("Widget accessibility labels are recorded", 'record_widget(ui, &response, label, "button", None)' in chrome)
 check("Android build adds a Tool Sets button to the touch tools row", '("Tool Sets", "ui.toggle.toolsets")' in scrolling and "add Tool Sets to the Android touch toolbar" in scrolling)
+check("Compact app bar uses fixed action slots and moves Save out of the row", "APP_BAR_COMPACT_BREAKPOINT: f32 = 420.0" in mobile and "fn title_width(self, remaining_width: f32)" in mobile and "if metrics.show_save" in mobile)
+check("Document title truncates instead of pushing app-bar actions", "Label::new(RichText::new(&document.title)" in mobile and ".truncate()" in mobile and "metrics.title_width(ui.available_width())" in mobile)
+check("Selection actions stay in one bounded, vertically centered scroll row", ".max_height(TOOL_HIT_TARGET.y)" in mobile and ".auto_shrink([false, false])" in mobile and "vec2(actions_width, TOOL_HIT_TARGET.y)" in mobile)
 
 for command in ["new", "open", "qsave", "saveas", "line", "pline", "circle", "rectang", "arc", "ellipse", "polygon", "text", "mtext", "hatch", "dimlinear", "dist", "area", "list", "audit"]:
     found = any(f'CommandSpec::new("{command}"' in p.read_text(errors="ignore") for p in engine.rglob("*.rs"))

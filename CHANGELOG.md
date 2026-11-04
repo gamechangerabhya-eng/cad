@@ -12,6 +12,10 @@
   on the first native CAD UI frame and presents an actionable error if readiness never arrives.
 
 ### Fixed
+- Stabilized the compact AR CAD app bar with fixed-width action slots, truncated document titles
+  and a Save action that moves out of the row on narrow screens. Constrained the selection action
+  strip to one centered, horizontally scrollable row. Bumped `GENERATOR_VERSION` to 66 so existing
+  generated launchers receive the updated layout.
 - Prevented cancelled Android multitouch gestures from becoming CAD point placements or primary
   canvas presses after a pinch/pan handoff.
 - Replaced the tall canvas zoom overlay with a compact horizontal control and corrected zoom-in,

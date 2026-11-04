@@ -10,6 +10,10 @@ use serde_json::Value;
 use crate::{CadApp, theme::Tokens};
 
 const APP_BAR_HEIGHT: f32 = 56.0;
+const APP_BAR_COMPACT_BREAKPOINT: f32 = 420.0;
+const APP_BAR_BRAND_WIDTH: f32 = 56.0;
+const APP_BAR_ACTION_WIDTH: f32 = 44.0;
+const APP_BAR_ACTION_GAP: f32 = SPACE_XS;
 const NAV_BAR_HEIGHT: f32 = 64.0;
 const TOOL_HIT_TARGET: Vec2 = vec2(48.0, 48.0);
 const TOOL_PANEL_MAX_HEIGHT: f32 = 360.0;
@@ -17,7 +21,6 @@ const WIDE_LAYOUT_BREAKPOINT: f32 = 760.0;
 const MEDIUM_LAYOUT_BREAKPOINT: f32 = 520.0;
 const EXPANDED_LAYOUT_MIN_HEIGHT: f32 = 420.0;
 const APP_BAR_BRAND_BREAKPOINT: f32 = 360.0;
-const APP_BAR_SAVE_BREAKPOINT: f32 = 280.0;
 const TOOL_SHEET_TWO_COLUMN_BREAKPOINT: f32 = 460.0;
 const TOOL_SHEET_THREE_COLUMN_BREAKPOINT: f32 = 540.0;
 const TOOL_SHEET_MAX_WIDTH: f32 = 520.0;
@@ -249,59 +252,115 @@ fn show_app_bar(app: &mut CadApp, ui: &mut egui::Ui, state: &mut WorkspaceState,
         .exact_size(APP_BAR_HEIGHT)
         .frame(egui::Frame::NONE.fill(t.chrome).stroke(Stroke::new(BORDER_WIDTH, t.border)))
         .show(ui, |ui| {
+            let metrics = AppBarMetrics::for_width(ui.available_width());
             ui.horizontal(|ui| {
-                let viewport_width = ui.available_width();
+                ui.spacing_mut().item_spacing.x = APP_BAR_ACTION_GAP;
                 ui.add_space(SPACE_SM);
-                if viewport_width >= APP_BAR_BRAND_BREAKPOINT {
-                    let compact = viewport_width < 520.0;
-                    ui.label(RichText::new(if compact { "AR" } else { "AR CAD" }).strong().size(TITLE_TEXT_SIZE).color(t.text));
-                    ui.separator();
+                if metrics.show_brand {
+                    let brand = if metrics.show_full_brand { "AR CAD" } else { "AR" };
+                    ui.add_sized(
+                        [metrics.brand_width, TOOL_HIT_TARGET.y],
+                        egui::Label::new(RichText::new(brand).strong().size(TITLE_TEXT_SIZE).color(t.text)).truncate(),
+                    );
                 }
 
-                if let Ok(document) = app.session.state() {
-                    if document.is_dirty() {
-                        ui.label(RichText::new("●").color(t.accent).size(10.0)).on_hover_text(crate::tl!("Unsaved changes"));
-                    }
-                    let quick_save = viewport_width >= APP_BAR_SAVE_BREAKPOINT;
-                    let action_width = if quick_save { 4.0 * TOOL_HIT_TARGET.x + 3.0 * SPACE_SM } else { 3.0 * TOOL_HIT_TARGET.x + 2.0 * SPACE_SM };
-                    let title_width = (ui.available_width() - action_width - SPACE_SM).clamp(0.0, 220.0);
-                    let title = ui.add_sized(
-                        [title_width, TOOL_HIT_TARGET.y],
-                        egui::Button::new(RichText::new(&document.title).size(BODY_TEXT_SIZE).color(t.text)).fill(t.chrome),
-                    );
-                    crate::control::record_widget(ui, &title, crate::tl!("Open drawings"), "button", None);
-                    if title.clicked() {
-                        state.category = Category::Document;
-                        state.tools_open = true;
-                        state.search.clear();
-                    }
-                } else {
-                    let quick_save = viewport_width >= APP_BAR_SAVE_BREAKPOINT;
-                    let action_width = if quick_save { 4.0 * TOOL_HIT_TARGET.x + 3.0 * SPACE_SM } else { 3.0 * TOOL_HIT_TARGET.x + 2.0 * SPACE_SM };
-                    let label_width = (ui.available_width() - action_width - SPACE_SM).clamp(0.0, 220.0);
-                    if label_width >= 72.0 {
-                        ui.add_sized(
-                            [label_width, TOOL_HIT_TARGET.y],
-                            egui::Label::new(RichText::new(crate::tl!("No drawing")).size(BODY_TEXT_SIZE).color(t.text_dim)),
-                        );
-                    }
+                let title_width = metrics.title_width(ui.available_width());
+                let title_response = ui
+                    .allocate_ui_with_layout(
+                        vec2(title_width, TOOL_HIT_TARGET.y),
+                        Layout::left_to_right(Align::Center),
+                        |ui| {
+                            ui.spacing_mut().item_spacing.x = SPACE_XS;
+                            if let Ok(document) = app.session.state() {
+                                if document.is_dirty() {
+                                    ui.label(RichText::new("●").color(t.accent).size(10.0))
+                                        .on_hover_text(crate::tl!("Unsaved changes"));
+                                }
+                                let title = ui.add_sized(
+                                    [ui.available_width().max(0.0), TOOL_HIT_TARGET.y],
+                                    egui::Label::new(RichText::new(&document.title).size(BODY_TEXT_SIZE).color(t.text))
+                                        .truncate()
+                                        .sense(egui::Sense::click()),
+                                );
+                                crate::control::record_widget(ui, &title, crate::tl!("Open drawings"), "button", None);
+                                title
+                            } else {
+                                ui.add_sized(
+                                    [ui.available_width().max(0.0), TOOL_HIT_TARGET.y],
+                                    egui::Label::new(RichText::new(crate::tl!("No drawing")).size(BODY_TEXT_SIZE).color(t.text_dim))
+                                        .truncate(),
+                                )
+                            }
+                        },
+                    )
+                    .inner;
+                if title_response.clicked() {
+                    state.category = Category::Document;
+                    state.tools_open = true;
+                    state.search.clear();
                 }
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    action_button(ui, "•••", "More tools", t, true, || {
+                    app_bar_button(ui, "•••", "More tools", t, true, || {
                         state.category = Category::More;
                         state.tools_open = !state.tools_open;
                     });
-                    if viewport_width >= APP_BAR_SAVE_BREAKPOINT {
-                        action_button(ui, "Save", "Save drawing", t, app.session.state().is_ok(), || app.start("qsave"));
+                    if metrics.show_save {
+                        app_bar_button(ui, "Save", "Save drawing", t, app.session.state().is_ok(), || app.start("qsave"));
                     }
                     let can_redo = app.session.state().is_ok_and(|document| !document.redo.is_empty());
-                    action_button(ui, "↷", "Redo", t, can_redo, || app.start("redo"));
+                    app_bar_button(ui, "↷", "Redo", t, can_redo, || app.start("redo"));
                     let can_undo = app.session.state().is_ok_and(|document| !document.undo.is_empty());
-                    action_button(ui, "↶", "Undo", t, can_undo, || app.start("u"));
+                    app_bar_button(ui, "↶", "Undo", t, can_undo, || app.start("u"));
                 });
             });
         });
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct AppBarMetrics {
+    show_brand: bool,
+    show_full_brand: bool,
+    show_save: bool,
+    brand_width: f32,
+    action_width: f32,
+}
+
+impl AppBarMetrics {
+    fn for_width(width: f32) -> Self {
+        let show_save = width >= APP_BAR_COMPACT_BREAKPOINT;
+        let show_brand = width >= APP_BAR_BRAND_BREAKPOINT;
+        let show_full_brand = width >= APP_BAR_COMPACT_BREAKPOINT + 100.0;
+        let action_count = if show_save { 4.0 } else { 3.0 };
+        let action_width = action_count * APP_BAR_ACTION_WIDTH + (action_count - 1.0) * APP_BAR_ACTION_GAP;
+        Self {
+            show_brand,
+            show_full_brand,
+            show_save,
+            brand_width: if show_brand { APP_BAR_BRAND_WIDTH } else { 0.0 },
+            action_width,
+        }
+    }
+
+    fn title_width(self, remaining_width: f32) -> f32 {
+        (remaining_width - self.action_width - SPACE_SM).max(0.0)
+    }
+}
+
+fn app_bar_button(ui: &mut egui::Ui, label: &str, description: &str, t: Tokens, enabled: bool, action: impl FnOnce()) {
+    let response = ui
+        .add_enabled_ui(enabled, |ui| {
+            ui.add_sized(
+                [APP_BAR_ACTION_WIDTH, TOOL_HIT_TARGET.y],
+                egui::Button::new(RichText::new(crate::i18n::t(label)).size(CONTROL_TEXT_SIZE).color(t.text)).fill(t.control),
+            )
+        })
+        .inner;
+    let response = response.on_hover_text(crate::i18n::t(description));
+    crate::control::record_widget(ui, &response, crate::i18n::t(description), "button", None);
+    if response.clicked() {
+        action();
+    }
 }
 
 fn show_selection_bar(app: &mut CadApp, ui: &mut egui::Ui, selected: usize, state: &mut WorkspaceState, t: Tokens) {
@@ -309,46 +368,66 @@ fn show_selection_bar(app: &mut CadApp, ui: &mut egui::Ui, selected: usize, stat
         .exact_size(56.0)
         .frame(egui::Frame::NONE.fill(t.panel).stroke(Stroke::new(BORDER_WIDTH, t.border)))
         .show(ui, |ui| {
-            ui.horizontal(|ui| {
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = SPACE_SM;
                 ui.add_space(SPACE_SM);
-                ui.label(RichText::new(crate::tf!("{n} selected", n = selected)).strong().color(t.text));
-                egui::ScrollArea::horizontal().id_salt("ar_cad_mobile_selection_actions").show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        let zoom_to_selection = ui.add_sized(
-                            TOOL_HIT_TARGET,
-                            egui::Button::new(crate::tl!("Zoom")).fill(t.control),
-                        );
-                        crate::control::record_widget(ui, &zoom_to_selection, crate::tl!("Zoom to selection"), "button", None);
-                        if zoom_to_selection.clicked() {
-                            let _ = app.run("zoom.object", Value::Null);
-                        }
-                        let registry = crate::control::all_commands(app);
-                        for (label, command) in [
-                            ("Move", "move"),
-                            ("Copy", "copy"),
-                            ("Rotate", "rotate"),
-                            ("Scale", "scale"),
-                            ("Offset", "offset"),
-                            ("Fillet", "fillet"),
-                            ("Delete", "erase"),
-                            ("Properties", "ui.panel.properties"),
-                        ] {
-                            if let Some(item) = registry
-                                .as_array()
-                                .and_then(|items| items.iter().find(|item| item.get("id").and_then(Value::as_str) == Some(command)))
-                            {
-                                if command_button(ui, app, item, state, t, 96.0, false) {
-                                    if let Some(id) = item.get("id").and_then(Value::as_str) {
-                                        remember_command(state, id);
+                ui.add_sized(
+                    [88.0, TOOL_HIT_TARGET.y],
+                    egui::Label::new(RichText::new(crate::tf!("{n} selected", n = selected)).strong().color(t.text)).truncate(),
+                );
+                let actions_width = ui.available_width().max(0.0);
+                ui.allocate_ui_with_layout(
+                    vec2(actions_width, TOOL_HIT_TARGET.y),
+                    Layout::left_to_right(Align::Center),
+                    |ui| {
+                        egui::ScrollArea::horizontal()
+                            .id_salt("ar_cad_mobile_selection_actions")
+                            .max_height(TOOL_HIT_TARGET.y)
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                ui.set_min_height(TOOL_HIT_TARGET.y);
+                                ui.horizontal(|ui| {
+                                    let zoom_to_selection =
+                                        ui.add_sized(TOOL_HIT_TARGET, egui::Button::new(crate::tl!("Zoom")).fill(t.control));
+                                    crate::control::record_widget(
+                                        ui,
+                                        &zoom_to_selection,
+                                        crate::tl!("Zoom to selection"),
+                                        "button",
+                                        None,
+                                    );
+                                    if zoom_to_selection.clicked() {
+                                        let _ = app.run("zoom.object", Value::Null);
                                     }
-                                }
-                            } else {
-                                ui.add_enabled(false, egui::Button::new(crate::i18n::t(label)).min_size(TOOL_HIT_TARGET))
-                                    .on_disabled_hover_text(crate::tl!("This action is not registered."));
-                            }
-                        }
-                    });
-                });
+                                    let registry = crate::control::all_commands(app);
+                                    for (label, command) in [
+                                        ("Move", "move"),
+                                        ("Copy", "copy"),
+                                        ("Rotate", "rotate"),
+                                        ("Scale", "scale"),
+                                        ("Offset", "offset"),
+                                        ("Fillet", "fillet"),
+                                        ("Delete", "erase"),
+                                        ("Properties", "ui.panel.properties"),
+                                    ] {
+                                        if let Some(item) = registry
+                                            .as_array()
+                                            .and_then(|items| items.iter().find(|item| item.get("id").and_then(Value::as_str) == Some(command)))
+                                        {
+                                            if command_button(ui, app, item, state, t, 96.0, false) {
+                                                if let Some(id) = item.get("id").and_then(Value::as_str) {
+                                                    remember_command(state, id);
+                                                }
+                                            }
+                                        } else {
+                                            ui.add_enabled(false, egui::Button::new(crate::i18n::t(label)).min_size(TOOL_HIT_TARGET))
+                                                .on_disabled_hover_text(crate::tl!("This action is not registered."));
+                                        }
+                                    }
+                                });
+                            });
+                    },
+                );
             });
         });
 }
@@ -1212,8 +1291,8 @@ fn matches_search(command: &Value, query: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        Category, LayoutClass, ResponsiveLayout, WorkspaceState, matches_category, matches_search, remember_command, requires_arguments_for_start,
-        tool_sheet_columns,
+        AppBarMetrics, Category, LayoutClass, ResponsiveLayout, WorkspaceState, matches_category, matches_search, remember_command,
+        requires_arguments_for_start, tool_sheet_columns,
     };
     use serde_json::json;
 
@@ -1223,6 +1302,25 @@ mod tests {
         assert_eq!(ResponsiveLayout::new(egui::vec2(600.0, 400.0), false).class, LayoutClass::Medium);
         assert_eq!(ResponsiveLayout::new(egui::vec2(900.0, 600.0), false).class, LayoutClass::Expanded);
         assert_eq!(ResponsiveLayout::new(egui::vec2(900.0, 350.0), false).class, LayoutClass::Medium);
+    }
+
+    #[test]
+    fn compact_app_bar_keeps_title_space_and_moves_save_to_overflow() {
+        let metrics = AppBarMetrics::for_width(368.0);
+        let remaining_width = 368.0 - super::SPACE_SM - metrics.brand_width - super::APP_BAR_ACTION_GAP;
+        assert!(metrics.show_brand);
+        assert!(!metrics.show_save);
+        assert!(metrics.title_width(remaining_width) >= 96.0);
+    }
+
+    #[test]
+    fn wide_app_bar_keeps_save_and_all_actions_in_fixed_width_slots() {
+        let metrics = AppBarMetrics::for_width(600.0);
+        let remaining_width = 600.0 - super::SPACE_SM - metrics.brand_width - super::APP_BAR_ACTION_GAP;
+        assert!(metrics.show_full_brand);
+        assert!(metrics.show_save);
+        assert_eq!(metrics.action_width, 4.0 * super::APP_BAR_ACTION_WIDTH + 3.0 * super::APP_BAR_ACTION_GAP);
+        assert!(metrics.title_width(remaining_width) >= 180.0);
     }
 
     #[test]
