@@ -14,6 +14,10 @@ const APP_BAR_COMPACT_BREAKPOINT: f32 = 420.0;
 const APP_BAR_BRAND_WIDTH: f32 = 56.0;
 const APP_BAR_ACTION_WIDTH: f32 = 44.0;
 const APP_BAR_ACTION_GAP: f32 = SPACE_XS;
+const SELECTION_BAR_HEIGHT: f32 = 60.0;
+const SELECTION_ACTION_HEIGHT: f32 = 40.0;
+const SELECTION_LABEL_WIDTH: f32 = 96.0;
+const SELECTION_ACTION_WIDTH: f32 = 84.0;
 const NAV_BAR_HEIGHT: f32 = 64.0;
 const TOOL_HIT_TARGET: Vec2 = vec2(48.0, 48.0);
 const TOOL_PANEL_MAX_HEIGHT: f32 = 360.0;
@@ -363,71 +367,116 @@ fn app_bar_button(ui: &mut egui::Ui, label: &str, description: &str, t: Tokens, 
     }
 }
 
+fn selection_command_button(ui: &mut egui::Ui, app: &mut CadApp, command: &Value, state: &mut WorkspaceState, t: Tokens) -> bool {
+    let Some(id) = command.get("id").and_then(Value::as_str) else {
+        return false;
+    };
+    let label = command.get("label").and_then(Value::as_str).unwrap_or(id);
+    let enabled = command.get("enabled").and_then(Value::as_bool).unwrap_or(false);
+    let response = ui
+        .add_enabled_ui(enabled, |ui| {
+            ui.add_sized(
+                [SELECTION_ACTION_WIDTH, SELECTION_ACTION_HEIGHT],
+                egui::Button::new(RichText::new(crate::i18n::t(label)).size(CONTROL_TEXT_SIZE).color(t.text))
+                    .truncate()
+                    .fill(t.control),
+            )
+        })
+        .inner;
+    crate::control::record_widget(ui, &response, crate::i18n::t(label), "button", None);
+    let response = if enabled {
+        response
+    } else {
+        response.on_disabled_hover_text(
+            command.get("disabledReason").and_then(Value::as_str).unwrap_or("Command metadata unavailable"),
+        )
+    };
+    if response.clicked() {
+        let params = command.get("params").and_then(Value::as_str).unwrap_or_default();
+        let contract = params.split_whitespace().next().unwrap_or_default();
+        let interactive = command.get("interactive").and_then(Value::as_bool).unwrap_or(false);
+        dispatch_command(app, state, id, contract, interactive);
+        true
+    } else {
+        false
+    }
+}
+
+fn dispatch_command(app: &mut CadApp, state: &mut WorkspaceState, id: &str, param_contract: &str, interactive: bool) {
+    if requires_arguments_for_start(id, param_contract, interactive) {
+        state.parameter_command = Some(id.to_owned());
+        state.parameter_json = "{}".to_owned();
+        state.parameter_error = None;
+    } else {
+        app.start(id);
+    }
+}
+
 fn show_selection_bar(app: &mut CadApp, ui: &mut egui::Ui, selected: usize, state: &mut WorkspaceState, t: Tokens) {
     egui::Panel::top("ar_cad_mobile_selection_bar")
-        .exact_size(56.0)
+        .exact_size(SELECTION_BAR_HEIGHT)
         .frame(egui::Frame::NONE.fill(t.panel).stroke(Stroke::new(BORDER_WIDTH, t.border)))
         .show(ui, |ui| {
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = SPACE_SM;
+                ui.spacing_mut().item_spacing.x = SPACE_XS;
                 ui.add_space(SPACE_SM);
                 ui.add_sized(
-                    [88.0, TOOL_HIT_TARGET.y],
+                    [SELECTION_LABEL_WIDTH, SELECTION_ACTION_HEIGHT],
                     egui::Label::new(RichText::new(crate::tf!("{n} selected", n = selected)).strong().color(t.text)).truncate(),
                 );
-                let actions_width = ui.available_width().max(0.0);
-                ui.allocate_ui_with_layout(
-                    vec2(actions_width, TOOL_HIT_TARGET.y),
-                    Layout::left_to_right(Align::Center),
-                    |ui| {
-                        egui::ScrollArea::horizontal()
-                            .id_salt("ar_cad_mobile_selection_actions")
-                            .max_height(TOOL_HIT_TARGET.y)
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| {
-                                ui.set_min_height(TOOL_HIT_TARGET.y);
-                                ui.horizontal(|ui| {
-                                    let zoom_to_selection =
-                                        ui.add_sized(TOOL_HIT_TARGET, egui::Button::new(crate::tl!("Zoom")).fill(t.control));
-                                    crate::control::record_widget(
-                                        ui,
-                                        &zoom_to_selection,
-                                        crate::tl!("Zoom to selection"),
-                                        "button",
-                                        None,
-                                    );
-                                    if zoom_to_selection.clicked() {
-                                        let _ = app.run("zoom.object", Value::Null);
-                                    }
-                                    let registry = crate::control::all_commands(app);
-                                    for (label, command) in [
-                                        ("Move", "move"),
-                                        ("Copy", "copy"),
-                                        ("Rotate", "rotate"),
-                                        ("Scale", "scale"),
-                                        ("Offset", "offset"),
-                                        ("Fillet", "fillet"),
-                                        ("Delete", "erase"),
-                                        ("Properties", "ui.panel.properties"),
-                                    ] {
-                                        if let Some(item) = registry
-                                            .as_array()
-                                            .and_then(|items| items.iter().find(|item| item.get("id").and_then(Value::as_str) == Some(command)))
-                                        {
-                                            if command_button(ui, app, item, state, t, 96.0, false) {
-                                                if let Some(id) = item.get("id").and_then(Value::as_str) {
-                                                    remember_command(state, id);
-                                                }
-                                            }
-                                        } else {
-                                            ui.add_enabled(false, egui::Button::new(crate::i18n::t(label)).min_size(TOOL_HIT_TARGET))
-                                                .on_disabled_hover_text(crate::tl!("This action is not registered."));
+                egui::ScrollArea::horizontal()
+                    .id_salt("ar_cad_mobile_selection_actions")
+                    .max_height(SELECTION_BAR_HEIGHT)
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        ui.set_min_height(SELECTION_BAR_HEIGHT);
+                        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                            ui.spacing_mut().item_spacing.x = SPACE_XS;
+                            let zoom_to_selection = ui.add_sized(
+                                [SELECTION_ACTION_WIDTH, SELECTION_ACTION_HEIGHT],
+                                egui::Button::new(crate::tl!("Zoom")).truncate().fill(t.control),
+                            );
+                            crate::control::record_widget(
+                                ui,
+                                &zoom_to_selection,
+                                crate::tl!("Zoom to selection"),
+                                "button",
+                                None,
+                            );
+                            if zoom_to_selection.clicked() {
+                                let _ = app.run("zoom.object", Value::Null);
+                            }
+                            let registry = crate::control::all_commands(app);
+                            for (label, command) in [
+                                ("Move", "move"),
+                                ("Copy", "copy"),
+                                ("Rotate", "rotate"),
+                                ("Scale", "scale"),
+                                ("Offset", "offset"),
+                                ("Fillet", "fillet"),
+                                ("Delete", "erase"),
+                                ("Properties", "ui.panel.properties"),
+                            ] {
+                                if let Some(item) = registry
+                                    .as_array()
+                                    .and_then(|items| items.iter().find(|item| item.get("id").and_then(Value::as_str) == Some(command)))
+                                {
+                                    if selection_command_button(ui, app, item, state, t) {
+                                        if let Some(id) = item.get("id").and_then(Value::as_str) {
+                                            remember_command(state, id);
                                         }
                                     }
-                                });
-                            });
-                    },
-                );
+                                } else {
+                                    ui.add_enabled(
+                                        false,
+                                        egui::Button::new(crate::i18n::t(label))
+                                            .min_size(vec2(SELECTION_ACTION_WIDTH, SELECTION_ACTION_HEIGHT)),
+                                    )
+                                    .on_disabled_hover_text(crate::tl!("This action is not registered."));
+                                }
+                            }
+                        });
+                    });
             });
         });
 }
@@ -570,25 +619,41 @@ fn show_tool_sheet(app: &mut CadApp, ctx: &egui::Context, state: &mut WorkspaceS
                     }
 
                     if state.category == Category::More {
-                        action_button(ui, "Touch guide", "Show common touch gestures and command controls", t, true, || {
+                        let tile_width = more_action_tile_width(ui.available_width());
+                        let mut open_guide = false;
+                        let mut open_history = false;
+                        let mut toggle_console = false;
+                        ui.horizontal_wrapped(|ui| {
+                            ui.spacing_mut().item_spacing = vec2(SPACE_SM, SPACE_XS);
+                            if more_action_button(ui, "Touch guide", "Show common touch gestures and command controls", t, tile_width).clicked() {
+                                open_guide = true;
+                            }
+                            if more_action_button(ui, "Command history", "Show recent command and status messages", t, tile_width).clicked() {
+                                open_history = true;
+                            }
+                            if more_action_button(ui, "Command console", "Open the advanced command console", t, tile_width).clicked() {
+                                toggle_console = true;
+                            }
+                        });
+                        if open_guide {
                             state.guide_open = true;
                             state.tools_open = false;
-                        });
-                        action_button(ui, "Command history", "Show recent command and status messages", t, true, || {
+                        } else if open_history {
                             state.history_open = true;
                             state.tools_open = false;
-                        });
-                        action_button(ui, "Command console", "Open the advanced command console", t, true, || {
+                        } else if toggle_console {
                             state.advanced_console_open = !state.advanced_console_open;
                             state.tools_open = false;
-                        });
+                        }
                     }
 
                     if let Some(commands) = registry.as_array() {
+                        let searching = !state.search.trim().is_empty();
                         let filtered: Vec<&Value> = commands
                             .iter()
                             .filter(|command| {
-                                (matches_category(command, state.category) || !state.search.trim().is_empty())
+                                (state.category != Category::More || searching)
+                                    && (matches_category(command, state.category) || searching)
                                     && matches_search(command, &state.search)
                                     && command.get("label").and_then(Value::as_str).is_some_and(|label| !label.is_empty())
                             })
@@ -1036,7 +1101,6 @@ fn command_button(
     let params = command.get("params").and_then(Value::as_str).unwrap_or_default();
     let param_contract = params.split_whitespace().next().unwrap_or_default();
     let interactive = command.get("interactive").and_then(Value::as_bool).unwrap_or(false);
-    let requires_arguments = requires_arguments_for_start(id, param_contract, interactive);
     let enabled = engine_enabled;
     let reason = if !engine_enabled { command.get("disabledReason").and_then(Value::as_str).unwrap_or("Command metadata unavailable") } else { "" };
     let shortcut = command.get("shortcut").and_then(Value::as_str);
@@ -1070,13 +1134,7 @@ fn command_button(
         })
         .inner;
     if selected {
-        if requires_arguments {
-            state.parameter_command = Some(id.to_owned());
-            state.parameter_json = "{}".to_owned();
-            state.parameter_error = None;
-        } else {
-            app.start(id);
-        }
+        dispatch_command(app, state, id, param_contract, interactive);
         return true;
     }
     false
@@ -1220,6 +1278,22 @@ fn action_button(ui: &mut egui::Ui, label: &str, description: &str, t: Tokens, e
     }
 }
 
+fn more_action_tile_width(available_width: f32) -> f32 {
+    ((available_width - SPACE_SM) * 0.5).max(0.0)
+}
+
+fn more_action_button(ui: &mut egui::Ui, label: &str, description: &str, t: Tokens, width: f32) -> egui::Response {
+    let response = ui.add_sized(
+        [width, SELECTION_ACTION_HEIGHT],
+        egui::Button::new(RichText::new(crate::i18n::t(label)).size(CONTROL_TEXT_SIZE).color(t.text))
+            .truncate()
+            .fill(t.control),
+    );
+    let response = response.on_hover_text(crate::i18n::t(description));
+    crate::control::record_widget(ui, &response, crate::i18n::t(description), "button", None);
+    response
+}
+
 fn zoom(app: &mut CadApp, factor: f64) {
     match app.session.state().map(|state| state.view().center) {
         Ok(center) => {
@@ -1291,8 +1365,8 @@ fn matches_search(command: &Value, query: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        AppBarMetrics, Category, LayoutClass, ResponsiveLayout, WorkspaceState, matches_category, matches_search, remember_command,
-        requires_arguments_for_start, tool_sheet_columns,
+        AppBarMetrics, Category, LayoutClass, ResponsiveLayout, WorkspaceState, matches_category, matches_search, more_action_tile_width,
+        remember_command, requires_arguments_for_start, tool_sheet_columns,
     };
     use serde_json::json;
 
@@ -1321,6 +1395,19 @@ mod tests {
         assert!(metrics.show_save);
         assert_eq!(metrics.action_width, 4.0 * super::APP_BAR_ACTION_WIDTH + 3.0 * super::APP_BAR_ACTION_GAP);
         assert!(metrics.title_width(remaining_width) >= 180.0);
+    }
+
+    #[test]
+    fn selection_actions_fit_their_fixed_height_strip() {
+        assert!(super::SELECTION_BAR_HEIGHT >= super::SELECTION_ACTION_HEIGHT + 12.0);
+        assert!(super::SELECTION_ACTION_WIDTH >= 72.0);
+    }
+
+    #[test]
+    fn more_sheet_action_tiles_share_available_phone_width() {
+        let tile_width = more_action_tile_width(320.0);
+        assert_eq!(tile_width, 156.0);
+        assert!(tile_width >= 140.0);
     }
 
     #[test]

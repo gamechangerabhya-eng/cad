@@ -616,7 +616,7 @@ marker = android_dir / ".artcraft-android-builder-generated"
 # Bump this whenever the generated launcher template changes so stale wrappers (which live in the
 # source checkout and would otherwise be preserved forever) are regenerated automatically instead
 # of failing against a newer app API.
-GENERATOR_VERSION = "66"
+GENERATOR_VERSION = "67"
 
 def ime_bridge_for_app(path):
     text = path.read_text(encoding="utf-8")

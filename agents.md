@@ -260,7 +260,7 @@ All other apps use the inline Python generator in `lib/build-common.sh` (startin
 
 ### 10.1 Generator Constants and Flow
 ```python
-GENERATOR_VERSION = "66"
+GENERATOR_VERSION = "67"
 # Marker file: .artcraft-android-builder-generated contains version
 ```
 
@@ -1864,7 +1864,7 @@ bash build.sh -app
 ## 51. Version History & Changelog Notes
 
 ### 51.1 Generator Version
-`GENERATOR_VERSION = "66"` in lib/build-common.sh
+`GENERATOR_VERSION = "67"` in lib/build-common.sh
 Bump when launcher template changes significantly.
 
 ### 51.2 Builder Version

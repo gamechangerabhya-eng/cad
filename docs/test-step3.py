@@ -24,7 +24,9 @@ check("Widget accessibility labels are recorded", 'record_widget(ui, &response, 
 check("Android build adds a Tool Sets button to the touch tools row", '("Tool Sets", "ui.toggle.toolsets")' in scrolling and "add Tool Sets to the Android touch toolbar" in scrolling)
 check("Compact app bar uses fixed action slots and moves Save out of the row", "APP_BAR_COMPACT_BREAKPOINT: f32 = 420.0" in mobile and "fn title_width(self, remaining_width: f32)" in mobile and "if metrics.show_save" in mobile)
 check("Document title truncates instead of pushing app-bar actions", "Label::new(RichText::new(&document.title)" in mobile and ".truncate()" in mobile and "metrics.title_width(ui.available_width())" in mobile)
-check("Selection actions stay in one bounded, vertically centered scroll row", ".max_height(TOOL_HIT_TARGET.y)" in mobile and ".auto_shrink([false, false])" in mobile and "vec2(actions_width, TOOL_HIT_TARGET.y)" in mobile)
+check("Selection actions use fixed-height buttons inside a taller strip", "SELECTION_BAR_HEIGHT: f32 = 60.0" in mobile and "SELECTION_ACTION_HEIGHT: f32 = 40.0" in mobile and "selection_command_button(ui, app, item, state, t)" in mobile)
+check("More sheet shortcuts use width-aware paired tiles", "fn more_action_tile_width(available_width: f32)" in mobile and "ui.horizontal_wrapped(|ui|" in mobile and "more_action_button(ui, \"Command history\"" in mobile)
+check("More sheet shows the all-command list only after search", "(state.category != Category::More || searching)" in mobile and "Search every CAD command" in mobile)
 
 for command in ["new", "open", "qsave", "saveas", "line", "pline", "circle", "rectang", "arc", "ellipse", "polygon", "text", "mtext", "hatch", "dimlinear", "dist", "area", "list", "audit"]:
     found = any(f'CommandSpec::new("{command}"' in p.read_text(errors="ignore") for p in engine.rglob("*.rs"))

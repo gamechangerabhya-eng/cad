@@ -13,9 +13,10 @@
 
 ### Fixed
 - Stabilized the compact AR CAD app bar with fixed-width action slots, truncated document titles
-  and a Save action that moves out of the row on narrow screens. Constrained the selection action
-  strip to one centered, horizontally scrollable row. Bumped `GENERATOR_VERSION` to 66 so existing
-  generated launchers receive the updated layout.
+  and a Save action that moves out of the row on narrow screens. Reworked the selection strip so
+  its fixed-height action buttons fit without clipping, organized More actions into responsive
+  paired tiles, and removed the unfiltered all-commands dump from More until search is used.
+  Bumped `GENERATOR_VERSION` to 67 so existing generated launchers receive the updated layout.
 - Prevented cancelled Android multitouch gestures from becoming CAD point placements or primary
   canvas presses after a pinch/pan handoff.
 - Replaced the tall canvas zoom overlay with a compact horizontal control and corrected zoom-in,
