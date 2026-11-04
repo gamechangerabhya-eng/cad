@@ -74,7 +74,7 @@ check(
 )
 check(
     "Generated launcher version invalidates stale Activity templates",
-    'GENERATOR_VERSION = "64"' in builder,
+    'GENERATOR_VERSION = "65"' in builder,
 )
 
 for label, ok in checks:

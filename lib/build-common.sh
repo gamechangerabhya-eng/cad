@@ -616,7 +616,7 @@ marker = android_dir / ".artcraft-android-builder-generated"
 # Bump this whenever the generated launcher template changes so stale wrappers (which live in the
 # source checkout and would otherwise be preserved forever) are regenerated automatically instead
 # of failing against a newer app API.
-GENERATOR_VERSION = "64"
+GENERATOR_VERSION = "65"
 
 def ime_bridge_for_app(path):
     text = path.read_text(encoding="utf-8")
@@ -2880,8 +2880,6 @@ icon = "@mipmap/ic_launcher"
     # the Activity's IME events into egui. Its presence is also what keeps the vendored
     # android-activity (which forwards show/hide to the Activity's imeShow/imeHide) in step.
     imports.append("mod ime_bridge;")
-    if app == "cadcraft":
-        imports.append("use jni::{jni_sig, jni_str, objects::JObject};")
     if re.search(r"\bSession\b", construct):
         imports.append(f"use {engine_ident}::Session;")
     services_syms = [s for s in ("NoServices", "Services") if re.search(r"\b" + s + r"\b", (SAF_RECIPES.get(app) or {}).get("construct_expr") or construct)]

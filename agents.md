@@ -1864,7 +1864,7 @@ bash build.sh -app
 ## 51. Version History & Changelog Notes
 
 ### 51.1 Generator Version
-`GENERATOR_VERSION = "64"` in lib/build-common.sh
+`GENERATOR_VERSION = "65"` in lib/build-common.sh
 Bump when launcher template changes significantly.
 
 ### 51.2 Builder Version
